@@ -146,6 +146,11 @@
                 <span>⌥+3</span>
             </div>
             <div class="command-separator"></div>
+            <div class="command-item" id="skillIndicator">
+                <i class="fas fa-code"></i>
+                <span>DSA</span>
+            </div>
+            <div class="command-separator"></div>
             <div class="command-item">
                 <i class="fas fa-history"></i>
                 <span>⌥+H</span>
@@ -185,10 +190,12 @@
         const statusDot = document.getElementById('statusDot');
         const hiddenIndicator = document.getElementById('hiddenIndicator');
         const controlsToggle = document.getElementById('controlsToggle');
+        const skillIndicator = document.getElementById('skillIndicator');
         
         let isInteractive = false;
         let isHidden = false;
         let controlsInChat = false;
+        let currentSkill = 'dsa';
         
         // Handle interaction state changes
         ipcRenderer.on('interaction-enabled', () => {
@@ -363,7 +370,9 @@
         function showNotification(message, type = 'info') {
             const notification = document.createElement('div')
             notification.className = `fixed top-4 right-4 p-4 rounded-lg text-white z-50 ${
-                type === 'error' ? 'bg-red-600' : 'bg-blue-600'
+                type === 'error' ? 'bg-red-600' : 
+                type === 'success' ? 'bg-green-600' :
+                'bg-blue-600'
             }`
             notification.textContent = message
             
@@ -402,6 +411,124 @@
         // Listen for session cleared
         window.electronAPI.onSessionCleared(() => {
             console.log('Session memory cleared')
+        })
+
+        // Listen for LLM responses
+        window.electronAPI.onLlmResponse((event, data) => {
+            console.log('LLM response received:', data)
+            showNotification(`LLM Analysis Complete - ${data.skill || 'General'}`, 'success')
+            
+            // Show notification that response is in dedicated window
+            showNotification('LLM response displayed in new window', 'info')
+        })
+
+        // Listen for LLM errors
+        window.electronAPI.onLlmError((event, data) => {
+            console.error('LLM error:', data.error)
+            showNotification(`LLM Error: ${data.error}`, 'error')
+        })
+
+        // Listen for skill changes
+        window.electronAPI.onSkillChanged((event, data) => {
+            console.log('Skill changed in main window:', data.skill);
+            currentSkill = data.skill;
+            updateSkillIndicator();
+        });
+
+        function updateSkillIndicator() {
+            const skillNames = {
+                'dsa': 'DSA',
+                'behavioral': 'Behavioral',
+                'sales': 'Sales',
+                'presentation': 'Presentation',
+                'data-science': 'Data Science'
+            };
+            const skillName = skillNames[currentSkill] || currentSkill;
+            skillIndicator.querySelector('span').textContent = skillName;
+        }
+
+        // Gemini configuration functions
+        async function showGeminiConfig() {
+            const status = await window.electronAPI.getGeminiStatus()
+            
+            const modal = document.createElement('div')
+            modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50'
+            modal.innerHTML = `
+                <div class="bg-gray-900 text-white p-6 rounded-lg max-w-md w-full">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-bold">🤖 Gemini Flash 1.5 Configuration</h2>
+                        <button class="text-gray-400 hover:text-white" onclick="this.closest('.fixed').remove()">✕</button>
+                    </div>
+                    
+                    <div class="mb-4 p-3 rounded ${status.hasApiKey ? 'bg-green-900' : 'bg-red-900'}">
+                        <p><strong>Status:</strong> ${status.hasApiKey ? 'Configured' : 'Not Configured'}</p>
+                        <p><strong>Model:</strong> ${status.model}</p>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">API Key:</label>
+                        <input type="password" id="geminiApiKey" placeholder="Enter your Gemini API key" 
+                               class="w-full p-2 bg-gray-800 border border-gray-600 rounded text-white">
+                        <p class="text-xs text-gray-400 mt-1">
+                            Get your API key from: <a href="https://makersuite.google.com/app/apikey" target="_blank" class="text-blue-400">Google AI Studio</a>
+                        </p>
+                    </div>
+                    
+                    <div class="flex space-x-2">
+                        <button onclick="configureGemini()" class="flex-1 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
+                            Configure
+                        </button>
+                        <button onclick="testGeminiConnection()" class="flex-1 bg-green-600 hover:bg-green-700 px-4 py-2 rounded">
+                            Test Connection
+                        </button>
+                    </div>
+                    
+                    <div class="mt-4 text-center">
+                        <button class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded" onclick="this.closest('.fixed').remove()">
+                            Close
+                        </button>
+                    </div>
+                </div>
+            `
+            document.body.appendChild(modal)
+        }
+
+        async function configureGemini() {
+            const apiKey = document.getElementById('geminiApiKey').value.trim()
+            if (!apiKey) {
+                showNotification('Please enter an API key', 'error')
+                return
+            }
+            
+            try {
+                const result = await window.electronAPI.setGeminiApiKey(apiKey)
+                if (result.success) {
+                    showNotification('Gemini API key configured successfully!', 'success')
+                    document.querySelector('.fixed').remove()
+                } else {
+                    showNotification(`Configuration failed: ${result.error}`, 'error')
+                }
+            } catch (error) {
+                showNotification(`Error: ${error.message}`, 'error')
+            }
+        }
+
+        async function testGeminiConnection() {
+            try {
+                const result = await window.electronAPI.testGeminiConnection()
+                if (result.success) {
+                    showNotification('Gemini connection test successful!', 'success')
+                } else {
+                    showNotification(`Connection test failed: ${result.error}`, 'error')
+                }
+            } catch (error) {
+                showNotification(`Error: ${error.message}`, 'error')
+            }
+        }
+
+        // Listen for Gemini config shortcut
+        window.electronAPI.onOpenGeminiConfig(() => {
+            showGeminiConfig()
         })
     </script>
 </body>

@@ -1,3 +1,5 @@
+const { contextBridge, ipcRenderer } = require('electron')
+
 // Expose protected methods that allow the renderer process to use
 // the ipcRenderer without exposing the entire object
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -22,12 +24,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearSessionMemory: () => ipcRenderer.invoke('clear-session-memory'),
   formatSessionHistory: () => ipcRenderer.invoke('format-session-history'),
   
+  // Gemini LLM configuration
+  setGeminiApiKey: (apiKey) => ipcRenderer.invoke('set-gemini-api-key', apiKey),
+  getGeminiStatus: () => ipcRenderer.invoke('get-gemini-status'),
+  testGeminiConnection: () => ipcRenderer.invoke('test-gemini-connection'),
+  
   // Event listeners
   onTranscriptionReceived: (callback) => ipcRenderer.on('transcription-received', callback),
   onSessionEvent: (callback) => ipcRenderer.on('session-event', callback),
   onSessionCleared: (callback) => ipcRenderer.on('session-cleared', callback),
   onOcrCompleted: (callback) => ipcRenderer.on('ocr-completed', callback),
   onOcrError: (callback) => ipcRenderer.on('ocr-error', callback),
+  onLlmResponse: (callback) => ipcRenderer.on('llm-response', callback),
+  onLlmError: (callback) => ipcRenderer.on('llm-error', callback),
+  onOpenGeminiConfig: (callback) => ipcRenderer.on('open-gemini-config', callback),
+  onDisplayLlmResponse: (callback) => ipcRenderer.on('display-llm-response', callback),
+  onSkillChanged: (callback) => ipcRenderer.on('skill-changed', callback),
   
   // Remove listeners
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel)

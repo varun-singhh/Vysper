@@ -614,13 +614,14 @@
                 type === 'user' ? 'bg-blue-600 ml-auto' : 
                 type === 'assistant' ? 'bg-gray-600' :
                 type === 'ocr' ? 'bg-green-600' :
+                type === 'llm' ? 'bg-purple-600' :
                 type === 'error' ? 'bg-red-600' :
                 'bg-gray-600'
             } max-w-xs`
             
             messageDiv.innerHTML = `
                 <div class="font-semibold text-sm">${sender}</div>
-                <div class="text-sm">${text}</div>
+                <div class="text-sm whitespace-pre-wrap">${text}</div>
             `
             
             messagesContainer.appendChild(messageDiv)
@@ -804,6 +805,18 @@
         // Listen for session cleared
         window.electronAPI.onSessionCleared(() => {
             console.log('Session memory cleared in chat')
+        })
+
+        // Listen for LLM responses
+        window.electronAPI.onLlmResponse((event, data) => {
+            console.log('LLM response received in chat:', data)
+            addMessage('LLM Analysis', data.response, 'llm')
+        })
+
+        // Listen for LLM errors
+        window.electronAPI.onLlmError((event, data) => {
+            console.error('LLM error in chat:', data.error)
+            addMessage('LLM Error', data.error, 'error')
         })
     </script>
 </body>

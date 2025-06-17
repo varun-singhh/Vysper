@@ -9,6 +9,11 @@ const { exec } = require('child_process')
 const util = require('util')
 const execPromise = util.promisify(exec)
 const Tesseract = require('tesseract.js')
+const { GoogleGenerativeAI } = require('@google/generative-ai')
+
+// Initialize Google Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'your-api-key-here')
+const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
 
 // Stealth measures
 process.title = 'WindowServer' // Disguise as a system process
@@ -21,11 +26,13 @@ if (process.platform === 'darwin') {
 let mainWindow = null
 let chatWindow = null
 let skillsWindow = null
+let llmResponseWindow = null
 let isRecording = false
 let isWindowHidden = false
 let isWindowInteractive = false
 let controlsInChat = false
-let activeWindow = 'main' // 'main', 'chat', or 'skills'
+let activeWindow = 'main' // 'main', 'chat', 'skills', or 'llm-response'
+let activeSkill = 'dsa' // Default skill is DSA
 let sessionMemory = [] // Array to store session events
 
 async function takeScreenshotAndOCR() {
@@ -82,6 +89,13 @@ async function takeScreenshotAndOCR() {
       addToSessionMemory('Screenshot taken and OCR completed', {
         ocrText: text.trim()
       })
+      
+      // Get current active skill from session memory
+      const sessionContext = getLLMOptimizedSessionHistory()
+      const currentActiveSkill = activeSkill // Use the global active skill variable
+      
+      // Process OCR text with LLM
+      await processOCRWithLLM(text.trim(), currentActiveSkill)
       
       // Send to all windows
       if (mainWindow) {
@@ -415,10 +429,9 @@ function setSkillsWindowInteractive(interactive) {
 
 function toggleWindowVisibility() {
   if (isWindowHidden) {
-    // Show window
+    // Show all windows
     if (mainWindow) {
       mainWindow.show()
-      mainWindow.focus()
     }
     if (chatWindow) {
       chatWindow.show()
@@ -426,11 +439,13 @@ function toggleWindowVisibility() {
     if (skillsWindow) {
       skillsWindow.show()
     }
+    if (llmResponseWindow) {
+      llmResponseWindow.show()
+    }
     isWindowHidden = false
-    console.log('Window shown')
     addToSessionMemory('All windows shown')
   } else {
-    // Hide window
+    // Hide all windows
     if (mainWindow) {
       mainWindow.hide()
     }
@@ -440,8 +455,10 @@ function toggleWindowVisibility() {
     if (skillsWindow) {
       skillsWindow.hide()
     }
+    if (llmResponseWindow) {
+      llmResponseWindow.hide()
+    }
     isWindowHidden = true
-    console.log('Window hidden')
     addToSessionMemory('All windows hidden')
   }
 }
@@ -621,82 +638,72 @@ app.whenReady().then(() => {
   })
 
   globalShortcut.register('CommandOrControl+Left', () => {
-    if (activeWindow === 'skills' && skillsWindow) {
-      // For skills window, move left only
-      const [x, y] = skillsWindow.getPosition()
-      skillsWindow.setPosition(Math.max(0, x - 50), y)
-    } else {
-      // For other windows, move left
+    if (!isWindowHidden) {
       let targetWindow = mainWindow
       if (activeWindow === 'chat' && chatWindow) {
         targetWindow = chatWindow
+      } else if (activeWindow === 'skills' && skillsWindow) {
+        targetWindow = skillsWindow
+      } else if (activeWindow === 'llm-response' && llmResponseWindow) {
+        targetWindow = llmResponseWindow
       }
       
       if (targetWindow && !isWindowHidden) {
         const [x, y] = targetWindow.getPosition()
         targetWindow.setPosition(Math.max(0, x - 50), y)
+        
+        // Move LLM response window with main window
+        if (targetWindow === mainWindow && llmResponseWindow) {
+          const mainBounds = mainWindow.getBounds()
+          const screenSize = screen.getPrimaryDisplay().workAreaSize
+          const llmHeight = Math.floor(screenSize.height * 0.4)
+          llmResponseWindow.setPosition(mainBounds.x, mainBounds.y + mainBounds.height + 5)
+        }
       }
     }
   })
 
   globalShortcut.register('CommandOrControl+Right', () => {
-    if (activeWindow === 'skills' && skillsWindow) {
-      // For skills window, move right only
-      const [x, y] = skillsWindow.getPosition()
-      const { width } = screen.getPrimaryDisplay().workAreaSize
-      const windowWidth = skillsWindow.getBounds().width
-      skillsWindow.setPosition(Math.min(width - windowWidth, x + 50), y)
-    } else {
-      // For other windows, move right
+    if (!isWindowHidden) {
       let targetWindow = mainWindow
       if (activeWindow === 'chat' && chatWindow) {
         targetWindow = chatWindow
+      } else if (activeWindow === 'skills' && skillsWindow) {
+        targetWindow = skillsWindow
+      } else if (activeWindow === 'llm-response' && llmResponseWindow) {
+        targetWindow = llmResponseWindow
       }
       
       if (targetWindow && !isWindowHidden) {
         const [x, y] = targetWindow.getPosition()
         const { width } = screen.getPrimaryDisplay().workAreaSize
         const windowWidth = targetWindow.getBounds().width
-        targetWindow.setPosition(Math.min(width - windowWidth, x + 100), y)
+        targetWindow.setPosition(Math.min(width - windowWidth, x + 50), y)
+        
+        // Move LLM response window with main window
+        if (targetWindow === mainWindow && llmResponseWindow) {
+          const mainBounds = mainWindow.getBounds()
+          const screenSize = screen.getPrimaryDisplay().workAreaSize
+          const llmHeight = Math.floor(screenSize.height * 0.4)
+          llmResponseWindow.setPosition(mainBounds.x, mainBounds.y + mainBounds.height + 5)
+        }
       }
     }
   })
 
   globalShortcut.register('CommandOrControl+Up', () => {
-    if (activeWindow === 'skills' && skillsWindow) {
-      // For skills window, navigate to previous skill
-      skillsWindow.webContents.send('navigate-skill', 'prev')
-    } else {
-      // For other windows, move up
-      let targetWindow = mainWindow
-      if (activeWindow === 'chat' && chatWindow) {
-        targetWindow = chatWindow
-      }
-      
-      if (targetWindow && !isWindowHidden) {
-        const [x, y] = targetWindow.getPosition()
-        targetWindow.setPosition(x, Math.max(0, y - 50))
-      }
+    if (!isWindowHidden) {
+      const nextSkill = getNextSkill()
+      setActiveSkill(nextSkill)
+      console.log('Switched to next skill:', nextSkill)
     }
   })
 
   globalShortcut.register('CommandOrControl+Down', () => {
-    if (activeWindow === 'skills' && skillsWindow) {
-      // For skills window, navigate to next skill
-      skillsWindow.webContents.send('navigate-skill', 'next')
-    } else {
-      // For other windows, move down
-      let targetWindow = mainWindow
-      if (activeWindow === 'chat' && chatWindow) {
-        targetWindow = chatWindow
-      }
-      
-      if (targetWindow && !isWindowHidden) {
-        const [x, y] = targetWindow.getPosition()
-        const { height } = screen.getPrimaryDisplay().workAreaSize
-        const windowHeight = targetWindow.getBounds().height
-        targetWindow.setPosition(x, Math.min(height - windowHeight, y + 50))
-      }
+    if (!isWindowHidden) {
+      const prevSkill = getPreviousSkill()
+      setActiveSkill(prevSkill)
+      console.log('Switched to previous skill:', prevSkill)
     }
   })
 
@@ -789,6 +796,20 @@ app.whenReady().then(() => {
       chatWindow.show()
       chatWindow.focus()
       addToSessionMemory('Session history requested')
+    }
+  })
+
+  globalShortcut.register('Alt+G', () => {
+    if (mainWindow && !isWindowHidden) {
+      mainWindow.webContents.send('open-gemini-config')
+    }
+  })
+
+  globalShortcut.register('Alt+L', () => {
+    if (llmResponseWindow && !isWindowHidden) {
+      llmResponseWindow.show()
+      llmResponseWindow.focus()
+      addToSessionMemory('LLM response window focused')
     }
   })
 
@@ -946,7 +967,7 @@ function addToSessionMemory(action, details = {}) {
   sessionMemory.push(event)
   console.log(`[SESSION] ${event.time} - ${action}:`, details)
   
-  // Send to all windows for display
+  // Send to all windows
   if (mainWindow) {
     mainWindow.webContents.send('session-event', event)
   }
@@ -955,6 +976,9 @@ function addToSessionMemory(action, details = {}) {
   }
   if (skillsWindow) {
     skillsWindow.webContents.send('session-event', event)
+  }
+  if (llmResponseWindow) {
+    llmResponseWindow.webContents.send('session-event', event)
   }
 }
 
@@ -1056,9 +1080,8 @@ function getLLMOptimizedSessionHistory() {
     system_controls: sessionMemory.filter(e => e.llm_context.action_type === 'SYSTEM_CONTROL')
   }
   
-  // Extract current context
-  const currentSkill = activities.skill_activities.length > 0 ? 
-    activities.skill_activities[activities.skill_activities.length - 1].details.skill : null
+  // Extract current context using active skill variable
+  const currentSkill = activeSkill // Use the global active skill variable
   const currentWindow = activities.window_navigation.length > 0 ? 
     activities.window_navigation[activities.window_navigation.length - 1].details.window : 'main'
   const isRecording = activities.speech_events.length % 2 === 1 // Odd number means recording is active
@@ -1173,6 +1196,9 @@ function clearSessionMemory() {
   if (skillsWindow) {
     skillsWindow.webContents.send('session-cleared')
   }
+  if (llmResponseWindow) {
+    llmResponseWindow.webContents.send('session-cleared')
+  }
 }
 
 function formatSessionHistory() {
@@ -1236,3 +1262,646 @@ ipcMain.handle('take-screenshot', async () => {
     return { success: false, error: error.message }
   }
 })
+
+// LLM processing function
+async function processOCRWithLLM(ocrText, activeSkill = null) {
+  try {
+    console.log('Processing OCR text with LLM...')
+    console.log('OCR Text:', ocrText)
+    console.log('Active Skill:', activeSkill)
+    
+    // Get current session context for better LLM understanding
+    const sessionContext = getLLMOptimizedSessionHistory()
+    
+    // Build the prompt based on skill and content
+    let prompt = buildLLMPrompt(ocrText, activeSkill, sessionContext)
+    
+    // For now, we'll use a mock LLM response
+    // In production, you would integrate with OpenAI, Claude, or other LLM APIs
+    const llmResponse = await mockLLMResponse(prompt, ocrText, activeSkill)
+    
+    // Add to session memory
+    addToSessionMemory('OCR processed with LLM', {
+      ocrText: ocrText,
+      skill: activeSkill,
+      llmResponse: llmResponse
+    })
+    
+    // Send response to all windows
+    if (mainWindow) {
+      mainWindow.webContents.send('llm-response', { 
+        ocrText: ocrText,
+        skill: activeSkill,
+        response: llmResponse
+      })
+    }
+    if (chatWindow) {
+      chatWindow.webContents.send('llm-response', { 
+        ocrText: ocrText,
+        skill: activeSkill,
+        response: llmResponse
+      })
+    }
+    if (skillsWindow) {
+      skillsWindow.webContents.send('llm-response', { 
+        ocrText: ocrText,
+        skill: activeSkill,
+        response: llmResponse
+      })
+    }
+    
+    // Create and show LLM response window
+    if (!llmResponseWindow) {
+      createLLMResponseWindow()
+    }
+    
+    // Ensure window is shown and focused
+    if (llmResponseWindow) {
+      if (!llmResponseWindow.isVisible()) {
+        llmResponseWindow.show()
+      }
+      llmResponseWindow.focus()
+      activeWindow = 'llm-response'
+      
+      // Ensure proper positioning
+      const mainBounds = mainWindow.getBounds()
+      const screenSize = screen.getPrimaryDisplay().workAreaSize
+      const windowWidth = mainBounds.width
+      const windowHeight = Math.floor(screenSize.height * 0.4)
+      const windowX = mainBounds.x
+      const windowY = mainBounds.y + mainBounds.height + 5
+      
+      llmResponseWindow.setBounds(windowX, windowY, windowWidth, windowHeight)
+    }
+    
+    // Wait for window to be ready, then send data
+    setTimeout(() => {
+      if (llmResponseWindow && !llmResponseWindow.isDestroyed()) {
+        console.log('Sending LLM response data to window:', { 
+          skill: activeSkill,
+          responseLength: llmResponse.length
+        })
+        
+        llmResponseWindow.webContents.send('display-llm-response', { 
+          skill: activeSkill,
+          response: llmResponse
+        })
+        
+        // Force window to front
+        llmResponseWindow.setAlwaysOnTop(true)
+        setTimeout(() => llmResponseWindow.setAlwaysOnTop(false), 1000)
+      } else {
+        console.error('LLM response window is not available or destroyed')
+      }
+    }, 1000)
+    
+    console.log('LLM processing completed')
+    return llmResponse
+    
+  } catch (error) {
+    console.error('LLM processing error:', error)
+    addToSessionMemory('OCR LLM processing failed', {
+      ocrText: ocrText,
+      skill: activeSkill,
+      error: error.message
+    })
+    
+    // Send error to windows
+    const errorResponse = {
+      ocrText: ocrText,
+      skill: activeSkill,
+      error: error.message,
+      response: 'LLM processing failed. Please try again.'
+    }
+    
+    if (mainWindow) {
+      mainWindow.webContents.send('llm-error', errorResponse)
+    }
+    if (chatWindow) {
+      chatWindow.webContents.send('llm-error', errorResponse)
+    }
+    if (skillsWindow) {
+      skillsWindow.webContents.send('llm-error', errorResponse)
+    }
+    
+    return null
+  }
+}
+
+function buildLLMPrompt(ocrText, activeSkill, sessionContext) {
+  let prompt = `You are an expert AI assistant analyzing OCR text from screenshots. Please provide a comprehensive, well-structured response.
+
+OCR Text: "${ocrText}"
+
+Current Context:
+- Active Skill: ${activeSkill || 'None'}
+- Session Focus: ${sessionContext.llm_context.session_focus}
+- User Workflow: ${sessionContext.llm_context.user_workflow}
+
+Instructions:`
+
+  if (activeSkill) {
+    switch (activeSkill.toLowerCase()) {
+      case 'dsa':
+        prompt += `
+This appears to be a DSA (Data Structures and Algorithms) related query. Please provide a comprehensive response:
+
+1. **Content Analysis**: Determine if this is a coding problem, algorithm question, or concept explanation
+2. **If it's a coding problem**, format it as a complete programming question with:
+   - Clear problem statement
+   - Input format and constraints (time limits, memory limits, data ranges)
+   - Output format and requirements
+   - Multiple sample test cases with inputs and expected outputs
+   - Time and space complexity considerations
+   - Recommended approach/algorithm with step-by-step explanation
+   - Complete solution code in Python/Java/C++
+   - Edge cases and optimization tips
+3. **If it's a concept question**, provide detailed explanation with:
+   - Core concepts and definitions
+   - Visual examples or diagrams (describe them)
+   - Implementation examples
+   - Common applications and use cases
+   - Related algorithms or data structures
+4. **Always include**: Key insights, common pitfalls to avoid, and best practices
+
+Format your response with clear headings, code blocks, and bullet points for readability.`
+        break
+        
+      case 'behavioral':
+        prompt += `
+This appears to be a behavioral interview related query. Please provide a comprehensive response:
+
+1. **Question Analysis**: Identify the behavioral competencies being assessed
+2. **STAR Method Framework**: Provide structured response with:
+   - **Situation**: Context and background
+   - **Task**: Your specific responsibility and goals
+   - **Action**: Detailed steps you took (use "I" statements)
+   - **Result**: Quantifiable outcomes and impact
+3. **Key Competencies**: List the skills being evaluated
+4. **Sample Talking Points**: 3-5 specific points to emphasize
+5. **Follow-up Questions**: Common follow-up questions to prepare for
+6. **Communication Tips**: How to effectively deliver this response
+7. **Alternative Scenarios**: Variations of this question
+
+Focus on specific examples, quantifiable results, and personal growth.`
+        break
+        
+      case 'sales':
+        prompt += `
+This appears to be a sales related query. Please provide a comprehensive response:
+
+1. **Query Analysis**: Identify the sales challenge or technique being discussed
+2. **Sales Framework**: Provide structured approach with:
+   - **Customer Understanding**: Needs analysis and pain points
+   - **Value Proposition**: Unique benefits and features
+   - **Objection Handling**: Common objections and responses
+   - **Closing Strategies**: Effective closing techniques
+   - **Follow-up**: Post-sale relationship building
+3. **Best Practices**: Specific actionable tips
+4. **Common Mistakes**: What to avoid
+5. **Tools and Resources**: Recommended approaches
+6. **Success Metrics**: How to measure effectiveness
+
+Include specific scripts, techniques, and real-world examples.`
+        break
+        
+      case 'presentation':
+        prompt += `
+This appears to be a presentation related query. Please provide a comprehensive response:
+
+1. **Query Analysis**: Identify the presentation aspect being discussed
+2. **Presentation Structure**: Provide detailed guidance on:
+   - **Opening (10%)**: Hook, objective, agenda
+   - **Body (80%)**: Main points, evidence, visual aids
+   - **Closing (10%)**: Summary, call to action, Q&A
+3. **Delivery Techniques**: Voice, body language, engagement
+4. **Visual Design**: Slide design principles and tools
+5. **Audience Engagement**: Interactive elements and questions
+6. **Common Mistakes**: What to avoid
+7. **Practice Tips**: How to prepare effectively
+
+Include specific examples, templates, and actionable advice.`
+        break
+        
+      case 'data-science':
+        prompt += `
+This appears to be a data science related query. Please provide a comprehensive response:
+
+1. **Query Analysis**: Identify the data science aspect being discussed
+2. **Methodological Approach**: Provide structured guidance on:
+   - **Data Preprocessing**: Cleaning, validation, feature engineering
+   - **Analysis/Modeling**: Statistical analysis, ML algorithms, model selection
+   - **Evaluation**: Performance metrics, validation, interpretation
+3. **Code Examples**: Provide Python/R code snippets
+4. **Best Practices**: Data quality, model interpretability, documentation
+5. **Tools and Libraries**: Recommended technologies
+6. **Common Challenges**: Pitfalls and solutions
+7. **Success Metrics**: How to measure project success
+
+Include practical code examples, statistical concepts, and real-world applications.`
+        break
+        
+      default:
+        prompt += `
+Please provide a comprehensive analysis and response based on the general context of the query. Include:
+1. Content type assessment
+2. Relevant insights and analysis
+3. Practical recommendations
+4. Additional resources or references`
+    }
+  } else {
+    prompt += `
+Please analyze this text and provide:
+1. **Content Assessment**: Whether this is a question, description, or other type of content
+2. **Appropriate Response**: Based on the content type and context
+3. **Technical Analysis**: If it appears to be technical or coding-related, provide structured problem format
+4. **General Guidance**: If it's a general question, provide clear and helpful explanation
+5. **Actionable Insights**: Practical recommendations and next steps
+
+Format your response with clear headings, bullet points, and structured information.`
+  }
+  
+  prompt += `
+
+Please provide a comprehensive, well-structured response that is immediately actionable and helpful. Use markdown formatting for better readability.`
+  
+  return prompt
+}
+
+async function mockLLMResponse(prompt, ocrText, activeSkill) {
+  try {
+    console.log('Calling Gemini Flash 1.5 with prompt:', prompt.substring(0, 200) + '...')
+    
+    // Check if API key is configured
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn('GEMINI_API_KEY not found in environment variables. Using fallback response.')
+      return generateFallbackResponse(ocrText, activeSkill)
+    }
+    
+    // Generate content with Gemini Flash 1.5
+    const result = await model.generateContent(prompt)
+    const response = await result.response
+    const text = response.text()
+    
+    console.log('Gemini Flash 1.5 response received:', text.substring(0, 200) + '...')
+    return text
+    
+  } catch (error) {
+    console.error('Gemini Flash 1.5 API error:', error)
+    
+    // Fallback to mock response if API fails
+    console.log('Falling back to mock response due to API error')
+    return generateFallbackResponse(ocrText, activeSkill)
+  }
+}
+
+function generateFallbackResponse(ocrText, activeSkill) {
+  // Analyze the OCR text to determine content type
+  const isQuestion = /[?]/.test(ocrText) || /^(what|how|why|when|where|which|who)/i.test(ocrText)
+  const isTechnical = /(algorithm|code|program|function|data structure|complexity|sort|search|tree|graph|array|string|number)/i.test(ocrText)
+  const isCoding = /(code|program|function|class|method|variable|loop|condition|recursion|dynamic programming|greedy|backtracking)/i.test(ocrText)
+  
+  let response = ''
+  
+  if (activeSkill && activeSkill.toLowerCase() === 'dsa' && (isTechnical || isCoding)) {
+    response = formatDSAProblem(ocrText)
+  } else if (activeSkill && activeSkill.toLowerCase() === 'behavioral') {
+    response = formatBehavioralResponse(ocrText)
+  } else if (activeSkill && activeSkill.toLowerCase() === 'sales') {
+    response = formatSalesResponse(ocrText)
+  } else if (activeSkill && activeSkill.toLowerCase() === 'presentation') {
+    response = formatPresentationResponse(ocrText)
+  } else if (activeSkill && activeSkill.toLowerCase() === 'data-science') {
+    response = formatDataScienceResponse(ocrText)
+  } else if (isQuestion) {
+    response = formatGeneralQuestion(ocrText)
+  } else {
+    response = formatGeneralResponse(ocrText)
+  }
+  
+  return response
+}
+
+function formatDSAProblem(ocrText) {
+  return '## DSA Problem Analysis\n\n' +
+    '**Problem Statement:**\n' +
+    ocrText + '\n\n' +
+    '**Input Format:**\n' +
+    '- The input consists of [describe input format based on context]\n' +
+    '- Constraints: [specify constraints]\n\n' +
+    '**Output Format:**\n' +
+    '- Return [describe expected output]\n\n' +
+    '**Sample Test Cases:**\n\n' +
+    '**Test Case 1:**\n' +
+    '```\n' +
+    'Input: [sample input]\n' +
+    'Output: [expected output]\n' +
+    'Explanation: [brief explanation]\n' +
+    '```\n\n' +
+    '**Test Case 2:**\n' +
+    '```\n' +
+    'Input: [sample input]\n' +
+    'Output: [expected output]\n' +
+    'Explanation: [brief explanation]\n' +
+    '```\n\n' +
+    '**Approach:**\n' +
+    '1. [Step-by-step approach]\n' +
+    '2. [Algorithm explanation]\n' +
+    '3. [Time Complexity: O(n)]\n' +
+    '4. [Space Complexity: O(1)]\n\n' +
+    '**Solution Code:**\n' +
+    '```python\n' +
+    '# Python solution\n' +
+    'def solve_problem(input_data):\n' +
+    '    # Implementation\n' +
+    '    pass\n' +
+    '```\n\n' +
+    '**Key Insights:**\n' +
+    '- [Important concepts to remember]\n' +
+    '- [Common pitfalls to avoid]\n' +
+    '- [Optimization tips]'
+}
+
+function formatBehavioralResponse(ocrText) {
+  return '## Behavioral Interview Response\n\n' +
+    '**Question Analysis:**\n' +
+    ocrText + '\n\n' +
+    '**STAR Method Framework:**\n\n' +
+    '**Situation:** [Describe the context]\n' +
+    '**Task:** [Explain your responsibility]\n' +
+    '**Action:** [Detail your approach]\n' +
+    '**Result:** [Share the outcome]\n\n' +
+    '**Key Competencies Being Assessed:**\n' +
+    '- [Leadership/Teamwork/Problem-solving/etc.]\n\n' +
+    '**Sample Talking Points:**\n' +
+    '- [Point 1]\n' +
+    '- [Point 2]\n' +
+    '- [Point 3]\n\n' +
+    '**Follow-up Questions to Prepare For:**\n' +
+    '- [Question 1]\n' +
+    '- [Question 2]\n\n' +
+    '**Tips for Effective Communication:**\n' +
+    '- Be specific and use concrete examples\n' +
+    '- Focus on your role and contributions\n' +
+    '- Quantify results when possible\n' +
+    '- Show learning and growth'
+}
+
+function formatSalesResponse(ocrText) {
+  return '## Sales Strategy Response\n\n' +
+    '**Query Analysis:**\n' +
+    ocrText + '\n\n' +
+    '**Sales Framework:**\n\n' +
+    '**1. Understanding the Customer:**\n' +
+    '- [Customer needs analysis]\n' +
+    '- [Pain points identification]\n\n' +
+    '**2. Value Proposition:**\n' +
+    '- [Unique value offered]\n' +
+    '- [Benefits and features]\n\n' +
+    '**3. Objection Handling:**\n' +
+    '- [Common objections and responses]\n' +
+    '- [Techniques for overcoming resistance]\n\n' +
+    '**4. Closing Strategies:**\n' +
+    '- [Effective closing techniques]\n' +
+    '- [Next steps and follow-up]\n\n' +
+    '**Best Practices:**\n' +
+    '- Listen actively and ask probing questions\n' +
+    '- Focus on benefits, not just features\n' +
+    '- Build rapport and trust\n' +
+    '- Follow up consistently'
+}
+
+function formatPresentationResponse(ocrText) {
+  return '## Presentation Guidance\n\n' +
+    '**Query Analysis:**\n' +
+    ocrText + '\n\n' +
+    '**Presentation Structure:**\n\n' +
+    '**1. Opening (10%):**\n' +
+    '- [Hook and attention grabber]\n' +
+    '- [Clear objective statement]\n\n' +
+    '**2. Body (80%):**\n' +
+    '- [Main points with supporting evidence]\n' +
+    '- [Visual aids and examples]\n\n' +
+    '**3. Closing (10%):**\n' +
+    '- [Summary and key takeaways]\n' +
+    '- [Call to action]\n\n' +
+    '**Delivery Tips:**\n' +
+    '- Maintain eye contact and confident posture\n' +
+    '- Use vocal variety and clear articulation\n' +
+    '- Engage audience with questions\n' +
+    '- Practice timing and pacing\n\n' +
+    '**Visual Design Principles:**\n' +
+    '- Keep slides simple and uncluttered\n' +
+    '- Use consistent fonts and colors\n' +
+    '- Include relevant visuals and charts\n' +
+    '- Limit text per slide'
+}
+
+function formatDataScienceResponse(ocrText) {
+  return '## Data Science Analysis\n\n' +
+    '**Query Analysis:**\n' +
+    ocrText + '\n\n' +
+    '**Methodological Approach:**\n\n' +
+    '**1. Data Preprocessing:**\n' +
+    '- [Data cleaning and validation]\n' +
+    '- [Feature engineering]\n' +
+    '- [Data transformation]\n\n' +
+    '**2. Analysis/Modeling:**\n' +
+    '- [Statistical analysis or ML approach]\n' +
+    '- [Algorithm selection]\n' +
+    '- [Model training and validation]\n\n' +
+    '**3. Evaluation:**\n' +
+    '- [Performance metrics]\n' +
+    '- [Model interpretation]\n' +
+    '- [Validation results]\n\n' +
+    '**Code Example:**\n' +
+    '```python\n' +
+    'import pandas as pd\n' +
+    'import numpy as np\n' +
+    'from sklearn.model_selection import train_test_split\n\n' +
+    '# Data preprocessing\n' +
+    '# [Implementation based on context]\n\n' +
+    '# Model training\n' +
+    '# [Implementation based on context]\n\n' +
+    '# Evaluation\n' +
+    '# [Implementation based on context]\n' +
+    '```\n\n' +
+    '**Best Practices:**\n' +
+    '- Ensure data quality and integrity\n' +
+    '- Use appropriate evaluation metrics\n' +
+    '- Consider model interpretability\n' +
+    '- Document assumptions and limitations'
+}
+
+function formatGeneralQuestion(ocrText) {
+  return '## General Question Response\n\n' +
+    '**Question:** ' + ocrText + '\n\n' +
+    '**Analysis:**\n' +
+    'This appears to be a general question seeking information or clarification.\n\n' +
+    '**Response:**\n' +
+    '[Provide a comprehensive, helpful response based on the question content]\n\n' +
+    '**Key Points:**\n' +
+    '- [Point 1]\n' +
+    '- [Point 2]\n' +
+    '- [Point 3]\n\n' +
+    '**Additional Resources:**\n' +
+    '- [Relevant resources or references]'
+}
+
+function formatGeneralResponse(ocrText) {
+  return '## Content Analysis\n\n' +
+    '**Content:** ' + ocrText + '\n\n' +
+    '**Assessment:**\n' +
+    'This appears to be [description/question/statement] content.\n\n' +
+    '**Analysis:**\n' +
+    '[Provide relevant analysis and insights based on the content]\n\n' +
+    '**Recommendations:**\n' +
+    '- [Recommendation 1]\n' +
+    '- [Recommendation 2]\n' +
+    '- [Recommendation 3]'
+}
+
+// IPC handlers for LLM configuration
+ipcMain.handle('set-gemini-api-key', async (event, apiKey) => {
+  try {
+    // Update the environment variable
+    process.env.GEMINI_API_KEY = apiKey
+    
+    // Test the API key with a simple request
+    const testModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+    const result = await testModel.generateContent('Hello')
+    await result.response
+    
+    console.log('Gemini API key configured successfully')
+    addToSessionMemory('Gemini API key configured', { status: 'success' })
+    
+    return { success: true, message: 'API key configured successfully' }
+  } catch (error) {
+    console.error('Failed to configure Gemini API key:', error)
+    addToSessionMemory('Gemini API key configuration failed', { error: error.message })
+    
+    return { success: false, error: error.message }
+  }
+})
+
+ipcMain.handle('get-gemini-status', async () => {
+  const hasApiKey = !!process.env.GEMINI_API_KEY
+  return {
+    hasApiKey: hasApiKey,
+    isConfigured: hasApiKey,
+    model: 'gemini-1.5-flash'
+  }
+})
+
+ipcMain.handle('test-gemini-connection', async () => {
+  try {
+    if (!process.env.GEMINI_API_KEY) {
+      return { success: false, error: 'No API key configured' }
+    }
+    
+    const testModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+    const result = await testModel.generateContent('Test connection')
+    await result.response
+    
+    return { success: true, message: 'Connection successful' }
+  } catch (error) {
+    return { success: false, error: error.message }
+  }
+})
+
+function createLLMResponseWindow() {
+  // Get main window position and size
+  const mainBounds = mainWindow.getBounds()
+  const screenSize = screen.getPrimaryDisplay().workAreaSize
+  
+  // Position below main window with same width as main tab
+  const windowWidth = mainBounds.width
+  const windowHeight = Math.floor(screenSize.height * 0.4) // 40% of screen height
+  const windowX = mainBounds.x
+  const windowY = mainBounds.y + mainBounds.height + 5 // 5px gap below main window
+  
+  llmResponseWindow = new BrowserWindow({
+    width: windowWidth,
+    height: windowHeight,
+    x: windowX,
+    y: windowY,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      webSecurity: false,
+      enableRemoteModule: true,
+      additionalArguments: ['--enable-media-stream']
+    },
+    show: false,
+    title: 'WindowServer',
+    icon: path.join(__dirname, 'icon.png')
+  })
+
+  // Load the LLM response HTML file
+  llmResponseWindow.loadFile('llm-response.html')
+  
+  // Show window when ready
+  llmResponseWindow.once('ready-to-show', () => {
+    llmResponseWindow.show()
+    llmResponseWindow.focus()
+  })
+
+  // Handle window close
+  llmResponseWindow.on('closed', () => {
+    llmResponseWindow = null
+    activeWindow = 'main'
+  })
+
+  // Handle window focus
+  llmResponseWindow.on('focus', () => {
+    activeWindow = 'llm-response'
+  })
+
+  console.log('LLM Response window created')
+}
+
+// Skill management functions
+function getNextSkill() {
+  const skills = ['dsa', 'behavioral', 'sales', 'presentation', 'data-science']
+  const currentIndex = skills.indexOf(activeSkill)
+  const nextIndex = (currentIndex + 1) % skills.length
+  return skills[nextIndex]
+}
+
+function getPreviousSkill() {
+  const skills = ['dsa', 'behavioral', 'sales', 'presentation', 'data-science']
+  const currentIndex = skills.indexOf(activeSkill)
+  const prevIndex = (currentIndex - 1 + skills.length) % skills.length
+  return skills[prevIndex]
+}
+
+function setActiveSkill(skill) {
+  const oldSkill = activeSkill
+  activeSkill = skill
+  addToSessionMemory('Skill changed', { 
+    oldSkill: oldSkill, 
+    newSkill: skill 
+  })
+  
+  // Update all windows with new skill
+  if (mainWindow) {
+    mainWindow.webContents.send('skill-changed', { skill: skill })
+  }
+  if (chatWindow) {
+    chatWindow.webContents.send('skill-changed', { skill: skill })
+  }
+  if (skillsWindow) {
+    skillsWindow.webContents.send('skill-changed', { skill: skill })
+  }
+  if (llmResponseWindow) {
+    llmResponseWindow.webContents.send('skill-changed', { skill: skill })
+  }
+  
+  console.log(`Active skill changed from ${oldSkill} to ${skill}`)
+}
