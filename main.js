@@ -10,6 +10,7 @@ const util = require('util')
 const execPromise = util.promisify(exec)
 const Tesseract = require('tesseract.js')
 const { GoogleGenerativeAI } = require('@google/generative-ai')
+const { promptLoader } = require('./prompt-loader')
 
 // Initialize Google Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'your-api-key-here')
@@ -604,6 +605,19 @@ if (process.platform === 'darwin') {
 app.whenReady().then(() => {
   console.log('App ready, setting up permissions...')
   
+  // Initialize skill prompt system
+  try {
+    console.log('🔄 Initializing skill prompt system...')
+    promptLoader.loadPrompts()
+    
+    const stats = promptLoader.getSessionStats()
+    console.log(`✅ ${stats.totalPrompts} skill prompts loaded successfully`)
+    console.log('📚 Available skills:', stats.availableSkills.join(', '))
+  } catch (error) {
+    console.error('❌ Failed to initialize prompt system:', error)
+    console.error('⚠️ System prompts will not be available - falling back to basic prompts')
+  }
+  
   // Setup permissions first
   setupPermissions()
   
@@ -1039,10 +1053,16 @@ ipcMain.on('request-current-skill', (event) => {
   event.reply('current-skill', { skill: activeSkill })
 })
 
-// Handle LLM window expansion request from renderer
-ipcMain.on('expand-llm-window', () => {
-  console.log('Received expansion request from LLM response window')
-  expandLLMResponseWindow()
+
+
+// Handle prompt system statistics request
+ipcMain.handle('get-prompt-stats', () => {
+  return promptLoader.getSessionStats()
+})
+
+// Handle available skills request
+ipcMain.handle('get-available-skills', () => {
+  return promptLoader.getAvailableSkills()
 })
 
 // Session memory management functions
@@ -1166,15 +1186,15 @@ function getLLMOptimizedSessionHistory() {
   const durationMs = sessionEnd - sessionStart
   const durationMinutes = Math.round(durationMs / 60000)
   
-  // Categorize activities
+  // Categorize activities with safety checks
   const activities = {
-    screenshots: sessionMemory.filter(e => e.llm_context.action_type === 'SCREENSHOT_OCR'),
-    speech_events: sessionMemory.filter(e => e.llm_context.action_type === 'SPEECH_START' || e.llm_context.action_type === 'SPEECH_STOP'),
-    transcriptions: sessionMemory.filter(e => e.llm_context.action_type === 'TRANSCRIPTION'),
-    text_inputs: sessionMemory.filter(e => e.llm_context.action_type === 'TEXT_INPUT'),
-    skill_activities: sessionMemory.filter(e => e.llm_context.action_type === 'SKILL_SELECTION' || e.llm_context.action_type === 'SKILL_ACTIVATION'),
-    window_navigation: sessionMemory.filter(e => e.llm_context.action_type === 'WINDOW_NAVIGATION'),
-    system_controls: sessionMemory.filter(e => e.llm_context.action_type === 'SYSTEM_CONTROL')
+    screenshots: sessionMemory.filter(e => e.llm_context && e.llm_context.action_type === 'SCREENSHOT_OCR'),
+    speech_events: sessionMemory.filter(e => e.llm_context && (e.llm_context.action_type === 'SPEECH_START' || e.llm_context.action_type === 'SPEECH_STOP')),
+    transcriptions: sessionMemory.filter(e => e.llm_context && e.llm_context.action_type === 'TRANSCRIPTION'),
+    text_inputs: sessionMemory.filter(e => e.llm_context && e.llm_context.action_type === 'TEXT_INPUT'),
+    skill_activities: sessionMemory.filter(e => e.llm_context && (e.llm_context.action_type === 'SKILL_SELECTION' || e.llm_context.action_type === 'SKILL_ACTIVATION')),
+    window_navigation: sessionMemory.filter(e => e.llm_context && e.llm_context.action_type === 'WINDOW_NAVIGATION'),
+    system_controls: sessionMemory.filter(e => e.llm_context && e.llm_context.action_type === 'SYSTEM_CONTROL')
   }
   
   // Extract current context using active skill variable
@@ -1183,13 +1203,13 @@ function getLLMOptimizedSessionHistory() {
     activities.window_navigation[activities.window_navigation.length - 1].details.window : 'main'
   const isRecording = activities.speech_events.length % 2 === 1 // Odd number means recording is active
   
-  // Generate workflow summary
+  // Generate workflow summary with safety checks
   const workflowSteps = sessionMemory.map((event, index) => ({
     step: index + 1,
     time: event.time,
-    action: event.llm_context.action_type,
-    summary: event.llm_context.context_summary,
-    content: event.llm_context.primary_content
+    action: event.llm_context ? event.llm_context.action_type : event.action,
+    summary: event.llm_context ? event.llm_context.context_summary : `${event.action} performed`,
+    content: event.llm_context ? event.llm_context.primary_content : (event.details ? JSON.stringify(event.details).substring(0, 50) + '...' : 'No content')
   }))
   
   return {
@@ -1200,7 +1220,7 @@ function getLLMOptimizedSessionHistory() {
       active_window: currentWindow,
       active_skill: currentSkill,
       recording_status: isRecording ? 'active' : 'inactive',
-      last_action: lastEvent.llm_context.context_summary
+      last_action: lastEvent.llm_context ? lastEvent.llm_context.context_summary : `${lastEvent.action} performed`
     },
     activity_breakdown: {
       screenshots_taken: activities.screenshots.length,
@@ -1212,8 +1232,8 @@ function getLLMOptimizedSessionHistory() {
     workflow_timeline: workflowSteps,
     recent_activities: sessionMemory.slice(-5).map(e => ({
       time: e.time,
-      action: e.llm_context.action_type,
-      summary: e.llm_context.context_summary
+      action: e.llm_context ? e.llm_context.action_type : e.action,
+      summary: e.llm_context ? e.llm_context.context_summary : `${e.action} performed`
     })),
     llm_context: {
       user_workflow: generateWorkflowDescription(activities),
@@ -1240,8 +1260,10 @@ function generateWorkflowDescription(activities) {
   }
   
   if (activities.skill_activities.length > 0) {
-    const skills = [...new Set(activities.skill_activities.map(e => e.details.skill))]
-    parts.push(`worked with skills: ${skills.join(', ')}`)
+    const skills = [...new Set(activities.skill_activities.map(e => e.details && e.details.skill ? e.details.skill : 'unknown').filter(skill => skill !== 'unknown'))]
+    if (skills.length > 0) {
+      parts.push(`worked with skills: ${skills.join(', ')}`)
+    }
   }
   
   return parts.length > 0 ? `User ${parts.join(', ')}` : "User has not performed any major activities"
@@ -1281,7 +1303,11 @@ function determineSessionFocus(activities) {
 
 function clearSessionMemory() {
   sessionMemory = []
-  console.log('[SESSION] Memory cleared')
+  
+  // Reset prompt tracking when session is cleared
+  promptLoader.resetSession()
+  
+  console.log('[SESSION] Memory cleared and prompt tracking reset')
   
   // Notify all windows
   if (mainWindow) {
@@ -1370,14 +1396,32 @@ async function processOCRWithLLM(ocrText, activeSkill = null) {
     // Get current session context for better LLM understanding
     const sessionContext = getLLMOptimizedSessionHistory()
     
-    // Build the prompt based on skill and content
-    let prompt = buildLLMPrompt(ocrText, activeSkill, sessionContext)
+    // Load prompts from files
+    promptLoader.loadPrompts()
     
-    // For now, we'll use a mock LLM response
-    // In production, you would integrate with OpenAI, Claude, or other LLM APIs
-    const llmResponse = await mockLLMResponse(prompt, ocrText, activeSkill)
+    // Use PromptLoader to prepare Gemini request with proper system prompts
+    const geminiRequest = promptLoader.prepareGeminiRequest(
+      activeSkill || 'general', 
+      `Analyze this content: ${ocrText}`, 
+      sessionMemory
+    )
     
-    // Add to session memory
+    console.log(`Using ${geminiRequest.isUsingModelMemory ? 'model memory' : 'regular message'} for skill: ${geminiRequest.skillUsed}`)
+    
+    // Call Gemini with the prepared request
+    const llmResponse = await callGeminiWithRequest(geminiRequest, ocrText, activeSkill)
+    console.log('LLM Response:', llmResponse)
+    
+    // Update session memory with PromptLoader
+    sessionMemory = promptLoader.updateStoredMemory(
+      sessionMemory, 
+      geminiRequest.skillUsed, 
+      geminiRequest.isUsingModelMemory, 
+      ocrText, 
+      llmResponse
+    )
+    
+    // Also add to legacy session memory for compatibility
     addToSessionMemory('OCR processed with LLM', {
       ocrText: ocrText,
       skill: activeSkill,
@@ -1436,7 +1480,7 @@ async function processOCRWithLLM(ocrText, activeSkill = null) {
       }
     }, 1000)
     
-    console.log('LLM processing completed')
+    console.log('LLM processing completed' ,llmResponse)
     return llmResponse
     
   } catch (error) {
@@ -1469,158 +1513,53 @@ async function processOCRWithLLM(ocrText, activeSkill = null) {
   }
 }
 
-function buildLLMPrompt(ocrText, activeSkill, sessionContext) {
-  let prompt = `You are an expert AI assistant analyzing OCR text from screenshots. Please provide a comprehensive, well-structured response.
 
-OCR Text: "${ocrText}"
 
-Current Context:
-- Active Skill: ${activeSkill || 'None'}
-- Session Focus: ${sessionContext.llm_context.session_focus}
-- User Workflow: ${sessionContext.llm_context.user_workflow}
-
-Instructions:`
-
-  if (activeSkill) {
-    switch (activeSkill.toLowerCase()) {
-      case 'dsa':
-        prompt += `
-This appears to be a DSA (Data Structures and Algorithms) related query. Please provide a comprehensive response:
-
-1. **Content Analysis**: Determine if this is a coding problem, algorithm question, or concept explanation
-2. **If it's a coding problem**, format it as a complete programming question with:
-   - Clear problem statement
-   - Input format and constraints (time limits, memory limits, data ranges)
-   - Output format and requirements
-   - Multiple sample test cases with inputs and expected outputs
-   - Time and space complexity considerations
-   - Recommended approach/algorithm with step-by-step explanation
-   - Complete solution code in Python/Java/C++
-   - Edge cases and optimization tips
-3. **If it's a concept question**, provide detailed explanation with:
-   - Core concepts and definitions
-   - Visual examples or diagrams (describe them)
-   - Implementation examples
-   - Common applications and use cases
-   - Related algorithms or data structures
-4. **Always include**: Key insights, common pitfalls to avoid, and best practices
-
-Format your response with clear headings, code blocks, and bullet points for readability.`
-        break
-        
-      case 'behavioral':
-        prompt += `
-This appears to be a behavioral interview related query. Please provide a comprehensive response:
-
-1. **Question Analysis**: Identify the behavioral competencies being assessed
-2. **STAR Method Framework**: Provide structured response with:
-   - **Situation**: Context and background
-   - **Task**: Your specific responsibility and goals
-   - **Action**: Detailed steps you took (use "I" statements)
-   - **Result**: Quantifiable outcomes and impact
-3. **Key Competencies**: List the skills being evaluated
-4. **Sample Talking Points**: 3-5 specific points to emphasize
-5. **Follow-up Questions**: Common follow-up questions to prepare for
-6. **Communication Tips**: How to effectively deliver this response
-7. **Alternative Scenarios**: Variations of this question
-
-Focus on specific examples, quantifiable results, and personal growth.`
-        break
-        
-      case 'sales':
-        prompt += `
-This appears to be a sales related query. Please provide a comprehensive response:
-
-1. **Query Analysis**: Identify the sales challenge or technique being discussed
-2. **Sales Framework**: Provide structured approach with:
-   - **Customer Understanding**: Needs analysis and pain points
-   - **Value Proposition**: Unique benefits and features
-   - **Objection Handling**: Common objections and responses
-   - **Closing Strategies**: Effective closing techniques
-   - **Follow-up**: Post-sale relationship building
-3. **Best Practices**: Specific actionable tips
-4. **Common Mistakes**: What to avoid
-5. **Tools and Resources**: Recommended approaches
-6. **Success Metrics**: How to measure effectiveness
-
-Include specific scripts, techniques, and real-world examples.`
-        break
-        
-      case 'presentation':
-        prompt += `
-This appears to be a presentation related query. Please provide a comprehensive response:
-
-1. **Query Analysis**: Identify the presentation aspect being discussed
-2. **Presentation Structure**: Provide detailed guidance on:
-   - **Opening (10%)**: Hook, objective, agenda
-   - **Body (80%)**: Main points, evidence, visual aids
-   - **Closing (10%)**: Summary, call to action, Q&A
-3. **Delivery Techniques**: Voice, body language, engagement
-4. **Visual Design**: Slide design principles and tools
-5. **Audience Engagement**: Interactive elements and questions
-6. **Common Mistakes**: What to avoid
-7. **Practice Tips**: How to prepare effectively
-
-Include specific examples, templates, and actionable advice.`
-        break
-        
-      case 'data-science':
-        prompt += `
-This appears to be a data science related query. Please provide a comprehensive response:
-
-1. **Query Analysis**: Identify the data science aspect being discussed
-2. **Methodological Approach**: Provide structured guidance on:
-   - **Data Preprocessing**: Cleaning, validation, feature engineering
-   - **Analysis/Modeling**: Statistical analysis, ML algorithms, model selection
-   - **Evaluation**: Performance metrics, validation, interpretation
-3. **Code Examples**: Provide Python/R code snippets
-4. **Best Practices**: Data quality, model interpretability, documentation
-5. **Tools and Libraries**: Recommended technologies
-6. **Common Challenges**: Pitfalls and solutions
-7. **Success Metrics**: How to measure project success
-
-Include practical code examples, statistical concepts, and real-world applications.`
-        break
-        
-      default:
-        prompt += `
-Please provide a comprehensive analysis and response based on the general context of the query. Include:
-1. Content type assessment
-2. Relevant insights and analysis
-3. Practical recommendations
-4. Additional resources or references`
-    }
-  } else {
-    prompt += `
-Please analyze this text and provide:
-1. **Content Assessment**: Whether this is a question, description, or other type of content
-2. **Appropriate Response**: Based on the content type and context
-3. **Technical Analysis**: If it appears to be technical or coding-related, provide structured problem format
-4. **General Guidance**: If it's a general question, provide clear and helpful explanation
-5. **Actionable Insights**: Practical recommendations and next steps
-
-Format your response with clear headings, bullet points, and structured information.`
-  }
-  
-  prompt += `
-
-Please provide a comprehensive, well-structured response that is immediately actionable and helpful. Use markdown formatting for better readability.`
-  
-  return prompt
-}
-
-async function mockLLMResponse(prompt, ocrText, activeSkill) {
+async function callGeminiWithRequest(geminiRequest, ocrText, activeSkill) {
   try {
-    console.log('Calling Gemini Flash 1.5 with prompt:', prompt.substring(0, 200) + '...')
+    console.log('Calling Gemini Flash 1.5 with structured request...')
+    console.log('Request type:', geminiRequest.isUsingModelMemory ? 'Model Memory' : 'Regular Message')
+    console.log('Skill:', geminiRequest.skillUsed)
     
     // Check if API key is configured
     if (!process.env.GEMINI_API_KEY) {
       console.warn('GEMINI_API_KEY not found in environment variables. Using fallback response.')
-      return generateFallbackResponse(ocrText, activeSkill)
+      return generateFallbackResponseFromPrompts(ocrText, activeSkill)
+    }
+    
+    // Prepare the model with system instruction if using model memory
+    let modelToUse = model
+    if (geminiRequest.systemInstruction) {
+      modelToUse = genAI.getGenerativeModel({ 
+        model: 'gemini-1.5-flash',
+        systemInstruction: geminiRequest.systemInstruction
+      })
+      console.log('Using model with system instruction')
     }
     
     // Generate content with Gemini Flash 1.5
-    const result = await model.generateContent(prompt)
+    // Debug: Log the request structure
+    console.log('Gemini request contents structure:', JSON.stringify(geminiRequest.contents, null, 2))
+    
+    // Fix the contents structure for the Gemini API
+    // The API expects either a string or an array of Content objects
+    let contentToSend;
+    
+    if (Array.isArray(geminiRequest.contents) && geminiRequest.contents.length > 0) {
+      // Extract the text from the structured content
+      const userContent = geminiRequest.contents.find(content => content.role === 'user');
+      if (userContent && userContent.parts && userContent.parts[0] && userContent.parts[0].text) {
+        contentToSend = userContent.parts[0].text;
+      } else {
+        contentToSend = 'Analyze the provided content.';
+      }
+    } else {
+      contentToSend = 'Analyze the provided content.';
+    }
+    
+    console.log('Sending to Gemini:', contentToSend.substring(0, 100) + '...')
+    
+    const result = await modelToUse.generateContent(contentToSend)
     const response = await result.response
     const text = response.text()
     
@@ -1630,217 +1569,120 @@ async function mockLLMResponse(prompt, ocrText, activeSkill) {
   } catch (error) {
     console.error('Gemini Flash 1.5 API error:', error)
     
-    // Fallback to mock response if API fails
-    console.log('Falling back to mock response due to API error')
-    return generateFallbackResponse(ocrText, activeSkill)
+    // Fallback to prompt-based response if API fails
+    console.log('Falling back to prompt-based response due to API error')
+    return generateFallbackResponseFromPrompts(ocrText, activeSkill)
   }
 }
 
-function generateFallbackResponse(ocrText, activeSkill) {
-  // Analyze the OCR text to determine content type
-  const isQuestion = /[?]/.test(ocrText) || /^(what|how|why|when|where|which|who)/i.test(ocrText)
-  const isTechnical = /(algorithm|code|program|function|data structure|complexity|sort|search|tree|graph|array|string|number)/i.test(ocrText)
-  const isCoding = /(code|program|function|class|method|variable|loop|condition|recursion|dynamic programming|greedy|backtracking)/i.test(ocrText)
-  
-  let response = ''
-  
-  if (activeSkill && activeSkill.toLowerCase() === 'dsa' && (isTechnical || isCoding)) {
-    response = formatDSAProblem(ocrText)
-  } else if (activeSkill && activeSkill.toLowerCase() === 'behavioral') {
-    response = formatBehavioralResponse(ocrText)
-  } else if (activeSkill && activeSkill.toLowerCase() === 'sales') {
-    response = formatSalesResponse(ocrText)
-  } else if (activeSkill && activeSkill.toLowerCase() === 'presentation') {
-    response = formatPresentationResponse(ocrText)
-  } else if (activeSkill && activeSkill.toLowerCase() === 'data-science') {
-    response = formatDataScienceResponse(ocrText)
-  } else if (isQuestion) {
-    response = formatGeneralQuestion(ocrText)
-  } else {
-    response = formatGeneralResponse(ocrText)
+function generateFallbackResponseFromPrompts(ocrText, activeSkill) {
+  try {
+    // Load prompts and get the system prompt for the active skill
+    promptLoader.loadPrompts()
+    const skillPrompt = promptLoader.getSkillPrompt(activeSkill || 'general')
+    
+    if (skillPrompt) {
+      console.log(`Using ${activeSkill} system prompt for offline fallback response`)
+      
+      // Extract key guidance from the actual prompt content
+      let response = `# ${activeSkill ? activeSkill.toUpperCase() : 'GENERAL'} Expert Analysis\n\n`
+      response += `**Content:** ${ocrText}\n\n`
+      
+      // Use the actual prompt content to generate a contextual response
+      // The system prompts are designed as helper agents, so we can extract their structure
+      if (skillPrompt.includes('IMMEDIATE') || skillPrompt.includes('Quick')) {
+        response += `**Immediate Action Required:**\n`
+        response += `This content requires expert ${activeSkill} analysis. `
+        
+        // Extract specific methodologies from the prompt
+        if (skillPrompt.includes('naive') && skillPrompt.includes('optimal')) {
+          response += `Apply the naive→optimal approach: start simple, then optimize.\n\n`
+        } else if (skillPrompt.includes('STAR') || skillPrompt.includes('Situation')) {
+          response += `Structure using STAR format for clear impact.\n\n`
+        } else if (skillPrompt.includes('statistics') || skillPrompt.includes('numbers')) {
+          response += `Support with compelling statistics and data points.\n\n`
+        } else if (skillPrompt.includes('clarifying questions')) {
+          response += `Begin by asking clarifying questions to understand requirements.\n\n`
+        }
+      }
+      
+      // Extract actionable framework from the prompt
+      if (skillPrompt.includes('1.') || skillPrompt.includes('- ')) {
+        response += `**Expert Framework Applied:**\n`
+        response += `Following the structured ${activeSkill} methodology for optimal results.\n\n`
+      }
+      
+      // If the prompt mentions specific techniques, highlight them
+      if (skillPrompt.includes('dry run')) {
+        response += `**Analysis Approach:** Dry run with concrete examples\n`
+      }
+      if (skillPrompt.includes('capacity estimation') || skillPrompt.includes('QPS')) {
+        response += `**Scale Considerations:** Calculate capacity with real numbers\n`
+      }
+      if (skillPrompt.includes('objection handling')) {
+        response += `**Strategy:** Address concerns with data-driven responses\n`
+      }
+      
+      response += `\n**Status:** Offline mode using ${activeSkill} expert framework. `
+      response += `Connect API for full interactive analysis.\n\n`
+      response += `**Next Step:** Apply the loaded ${activeSkill} prompt methodology to this specific content.`
+      
+      return response
+    } else {
+      console.log(`No prompt found for skill: ${activeSkill}`)
+      return generateLegacyFallbackResponse(ocrText, activeSkill)
+    }
+  } catch (error) {
+    console.error('Error generating prompt-based fallback:', error)
+    return generateLegacyFallbackResponse(ocrText, activeSkill)
   }
+}
+
+function generateLegacyFallbackResponse(ocrText, activeSkill) {
+  // Final fallback when even prompt loading fails
+  return `# ${activeSkill ? activeSkill.toUpperCase() : 'GENERAL'} Analysis\n\n` +
+    `**Content:** ${ocrText}\n\n` +
+    `**Status:** System prompts failed to load. Please check your prompts folder and restart the application.\n\n` +
+    `**Manual Action Required:** This content needs to be analyzed using the ${activeSkill || 'appropriate'} expertise framework.`
+}
+
+// IPC handlers for dynamic window sizing
+ipcMain.handle('expand-llm-window', (event, contentMetrics) => {
+  console.log('Received expand-llm-window request with metrics:', contentMetrics)
+  expandLLMResponseWindow(contentMetrics)
+  return { success: true }
+})
+
+ipcMain.handle('resize-llm-window-for-content', (event, contentMetrics) => {
+  console.log('Received resize request with content metrics:', contentMetrics)
   
-  return response
-}
-
-function formatDSAProblem(ocrText) {
-  return '## DSA Problem Analysis\n\n' +
-    '**Problem Statement:**\n' +
-    ocrText + '\n\n' +
-    '**Input Format:**\n' +
-    '- The input consists of [describe input format based on context]\n' +
-    '- Constraints: [specify constraints]\n\n' +
-    '**Output Format:**\n' +
-    '- Return [describe expected output]\n\n' +
-    '**Sample Test Cases:**\n\n' +
-    '**Test Case 1:**\n' +
-    '```\n' +
-    'Input: [sample input]\n' +
-    'Output: [expected output]\n' +
-    'Explanation: [brief explanation]\n' +
-    '```\n\n' +
-    '**Test Case 2:**\n' +
-    '```\n' +
-    'Input: [sample input]\n' +
-    'Output: [expected output]\n' +
-    'Explanation: [brief explanation]\n' +
-    '```\n\n' +
-    '**Approach:**\n' +
-    '1. [Step-by-step approach]\n' +
-    '2. [Algorithm explanation]\n' +
-    '3. [Time Complexity: O(n)]\n' +
-    '4. [Space Complexity: O(1)]\n\n' +
-    '**Solution Code:**\n' +
-    '```python\n' +
-    '# Python solution\n' +
-    'def solve_problem(input_data):\n' +
-    '    # Implementation\n' +
-    '    pass\n' +
-    '```\n\n' +
-    '**Key Insights:**\n' +
-    '- [Important concepts to remember]\n' +
-    '- [Common pitfalls to avoid]\n' +
-    '- [Optimization tips]'
-}
-
-function formatBehavioralResponse(ocrText) {
-  return '## Behavioral Interview Response\n\n' +
-    '**Question Analysis:**\n' +
-    ocrText + '\n\n' +
-    '**STAR Method Framework:**\n\n' +
-    '**Situation:** [Describe the context]\n' +
-    '**Task:** [Explain your responsibility]\n' +
-    '**Action:** [Detail your approach]\n' +
-    '**Result:** [Share the outcome]\n\n' +
-    '**Key Competencies Being Assessed:**\n' +
-    '- [Leadership/Teamwork/Problem-solving/etc.]\n\n' +
-    '**Sample Talking Points:**\n' +
-    '- [Point 1]\n' +
-    '- [Point 2]\n' +
-    '- [Point 3]\n\n' +
-    '**Follow-up Questions to Prepare For:**\n' +
-    '- [Question 1]\n' +
-    '- [Question 2]\n\n' +
-    '**Tips for Effective Communication:**\n' +
-    '- Be specific and use concrete examples\n' +
-    '- Focus on your role and contributions\n' +
-    '- Quantify results when possible\n' +
-    '- Show learning and growth'
-}
-
-function formatSalesResponse(ocrText) {
-  return '## Sales Strategy Response\n\n' +
-    '**Query Analysis:**\n' +
-    ocrText + '\n\n' +
-    '**Sales Framework:**\n\n' +
-    '**1. Understanding the Customer:**\n' +
-    '- [Customer needs analysis]\n' +
-    '- [Pain points identification]\n\n' +
-    '**2. Value Proposition:**\n' +
-    '- [Unique value offered]\n' +
-    '- [Benefits and features]\n\n' +
-    '**3. Objection Handling:**\n' +
-    '- [Common objections and responses]\n' +
-    '- [Techniques for overcoming resistance]\n\n' +
-    '**4. Closing Strategies:**\n' +
-    '- [Effective closing techniques]\n' +
-    '- [Next steps and follow-up]\n\n' +
-    '**Best Practices:**\n' +
-    '- Listen actively and ask probing questions\n' +
-    '- Focus on benefits, not just features\n' +
-    '- Build rapport and trust\n' +
-    '- Follow up consistently'
-}
-
-function formatPresentationResponse(ocrText) {
-  return '## Presentation Guidance\n\n' +
-    '**Query Analysis:**\n' +
-    ocrText + '\n\n' +
-    '**Presentation Structure:**\n\n' +
-    '**1. Opening (10%):**\n' +
-    '- [Hook and attention grabber]\n' +
-    '- [Clear objective statement]\n\n' +
-    '**2. Body (80%):**\n' +
-    '- [Main points with supporting evidence]\n' +
-    '- [Visual aids and examples]\n\n' +
-    '**3. Closing (10%):**\n' +
-    '- [Summary and key takeaways]\n' +
-    '- [Call to action]\n\n' +
-    '**Delivery Tips:**\n' +
-    '- Maintain eye contact and confident posture\n' +
-    '- Use vocal variety and clear articulation\n' +
-    '- Engage audience with questions\n' +
-    '- Practice timing and pacing\n\n' +
-    '**Visual Design Principles:**\n' +
-    '- Keep slides simple and uncluttered\n' +
-    '- Use consistent fonts and colors\n' +
-    '- Include relevant visuals and charts\n' +
-    '- Limit text per slide'
-}
-
-function formatDataScienceResponse(ocrText) {
-  return '## Data Science Analysis\n\n' +
-    '**Query Analysis:**\n' +
-    ocrText + '\n\n' +
-    '**Methodological Approach:**\n\n' +
-    '**1. Data Preprocessing:**\n' +
-    '- [Data cleaning and validation]\n' +
-    '- [Feature engineering]\n' +
-    '- [Data transformation]\n\n' +
-    '**2. Analysis/Modeling:**\n' +
-    '- [Statistical analysis or ML approach]\n' +
-    '- [Algorithm selection]\n' +
-    '- [Model training and validation]\n\n' +
-    '**3. Evaluation:**\n' +
-    '- [Performance metrics]\n' +
-    '- [Model interpretation]\n' +
-    '- [Validation results]\n\n' +
-    '**Code Example:**\n' +
-    '```python\n' +
-    'import pandas as pd\n' +
-    'import numpy as np\n' +
-    'from sklearn.model_selection import train_test_split\n\n' +
-    '# Data preprocessing\n' +
-    '# [Implementation based on context]\n\n' +
-    '# Model training\n' +
-    '# [Implementation based on context]\n\n' +
-    '# Evaluation\n' +
-    '# [Implementation based on context]\n' +
-    '```\n\n' +
-    '**Best Practices:**\n' +
-    '- Ensure data quality and integrity\n' +
-    '- Use appropriate evaluation metrics\n' +
-    '- Consider model interpretability\n' +
-    '- Document assumptions and limitations'
-}
-
-function formatGeneralQuestion(ocrText) {
-  return '## General Question Response\n\n' +
-    '**Question:** ' + ocrText + '\n\n' +
-    '**Analysis:**\n' +
-    'This appears to be a general question seeking information or clarification.\n\n' +
-    '**Response:**\n' +
-    '[Provide a comprehensive, helpful response based on the question content]\n\n' +
-    '**Key Points:**\n' +
-    '- [Point 1]\n' +
-    '- [Point 2]\n' +
-    '- [Point 3]\n\n' +
-    '**Additional Resources:**\n' +
-    '- [Relevant resources or references]'
-}
-
-function formatGeneralResponse(ocrText) {
-  return '## Content Analysis\n\n' +
-    '**Content:** ' + ocrText + '\n\n' +
-    '**Assessment:**\n' +
-    'This appears to be [description/question/statement] content.\n\n' +
-    '**Analysis:**\n' +
-    '[Provide relevant analysis and insights based on the content]\n\n' +
-    '**Recommendations:**\n' +
-    '- [Recommendation 1]\n' +
-    '- [Recommendation 2]\n' +
-    '- [Recommendation 3]'
-}
+  try {
+    if (llmResponseWindow && !llmResponseWindow.isDestroyed()) {
+      const { width, height } = calculateOptimalWindowSize(contentMetrics)
+      const currentBounds = llmResponseWindow.getBounds()
+      
+      // Validate the calculated dimensions
+      const validWidth = Math.max(300, Math.min(width || 800, 2000))
+      const validHeight = Math.max(200, Math.min(height || 400, 1500))
+      
+      console.log(`Calculated size: ${width}x${height}, Using validated size: ${validWidth}x${validHeight}`)
+      
+      llmResponseWindow.setBounds({
+        x: Math.round(currentBounds.x),
+        y: Math.round(currentBounds.y),
+        width: Math.round(validWidth),
+        height: Math.round(validHeight)
+      })
+      
+      console.log(`Successfully resized window to ${validWidth}x${validHeight} based on content`)
+      return { success: true, newSize: { width: validWidth, height: validHeight } }
+    }
+    return { success: false, error: 'Window not available' }
+  } catch (error) {
+    console.error('Error resizing window for content:', error)
+    return { success: false, error: error.message }
+  }
+})
 
 // IPC handlers for LLM configuration
 ipcMain.handle('set-gemini-api-key', async (event, apiKey) => {
@@ -1986,10 +1828,19 @@ function getPreviousSkill() {
 function setActiveSkill(skill) {
   const oldSkill = activeSkill
   activeSkill = skill
-  addToSessionMemory('Skill changed', { 
-    oldSkill: oldSkill, 
-    newSkill: skill 
-  })
+  
+  // Clear session memory when changing skills for a fresh start
+  if (oldSkill !== skill) {
+    console.log(`Clearing session memory due to skill change: ${oldSkill} → ${skill}`)
+    clearSessionMemory()
+    
+    // Add initial event to the fresh memory
+    addToSessionMemory('Skill changed', { 
+      oldSkill: oldSkill, 
+      newSkill: skill,
+      memoryCleared: true
+    })
+  }
   
   // Update all windows with new skill
   if (mainWindow) {
@@ -2005,7 +1856,7 @@ function setActiveSkill(skill) {
     llmResponseWindow.webContents.send('skill-changed', { skill: skill })
   }
   
-  console.log(`Active skill changed from ${oldSkill} to ${skill}`)
+  console.log(`Active skill changed from ${oldSkill} to ${skill} (memory cleared)`)
 }
 
 function moveActiveWindow(direction) {
@@ -2047,7 +1898,70 @@ function moveActiveWindow(direction) {
   addToSessionMemory('Windows moved', { direction: direction, distance: moveDistance });
 }
 
-function expandLLMResponseWindow() {
+function calculateOptimalWindowSize(contentMetrics) {
+  try {
+    const mainBounds = mainWindow ? mainWindow.getBounds() : { width: 1000 }
+    const screenSize = screen.getPrimaryDisplay().workAreaSize
+    
+    // Base dimensions with safety checks
+    const minWidth = 800
+    const maxWidth = Math.min(screenSize.width * 0.9, 1400)
+    const minHeight = 300
+    const maxHeight = Math.min(screenSize.height * 0.85, 1200)
+    
+    // Calculate width based on content
+    let optimalWidth = Math.max(minWidth, mainBounds.width || minWidth)
+    if (contentMetrics && contentMetrics.hasCode) {
+      // Code content needs more width for split layout
+      optimalWidth = Math.max(1000, optimalWidth)
+    }
+    optimalWidth = Math.min(optimalWidth, maxWidth)
+    
+    // Calculate height based on content
+    let optimalHeight = minHeight
+    
+    if (contentMetrics && typeof contentMetrics === 'object') {
+      const lineCount = Math.max(0, parseInt(contentMetrics.lineCount) || 0)
+      const codeBlocks = Math.max(0, parseInt(contentMetrics.codeBlocks) || 0)
+      const hasLongLines = contentMetrics.hasLongLines || false
+      
+      // Base calculation: ~20px per line of content
+      const contentHeight = Math.max(lineCount * 20, 200)
+      
+      // Add extra height for code blocks
+      const codeHeight = codeBlocks * 100
+      
+      // Add extra height for long lines (need more wrapping space)
+      const longLineBonus = hasLongLines ? 100 : 0
+      
+      // Total content height with padding
+      const totalContentHeight = contentHeight + codeHeight + longLineBonus + 100 // +100 for padding
+      
+      optimalHeight = Math.min(totalContentHeight, maxHeight)
+      optimalHeight = Math.max(optimalHeight, minHeight)
+    }
+    
+    // Ensure values are finite numbers
+    const finalWidth = isFinite(optimalWidth) ? optimalWidth : minWidth
+    const finalHeight = isFinite(optimalHeight) ? optimalHeight : minHeight
+    
+    console.log('Calculated optimal size:', { 
+      width: finalWidth, 
+      height: finalHeight, 
+      contentMetrics,
+      screenSize,
+      bounds: { minWidth, maxWidth, minHeight, maxHeight }
+    })
+    
+    return { width: finalWidth, height: finalHeight }
+  } catch (error) {
+    console.error('Error calculating optimal window size:', error)
+    // Return safe defaults
+    return { width: 800, height: 400 }
+  }
+}
+
+function expandLLMResponseWindow(contentMetrics = null) {
   if (!llmResponseWindow) {
     console.error('Cannot expand LLM response window - window does not exist')
     return
@@ -2062,13 +1976,13 @@ function expandLLMResponseWindow() {
   const currentBounds = llmResponseWindow.getBounds()
   console.log('Current window bounds:', currentBounds)
   
-  // Get main window position and calculate much larger size
+  // Calculate optimal size based on content
+  const { width: windowWidth, height: windowHeight } = calculateOptimalWindowSize(contentMetrics)
+  
+  // Calculate position
   const mainBounds = mainWindow.getBounds()
   const screenSize = screen.getPrimaryDisplay().workAreaSize
   
-  // Make window much larger - use 85% of screen height and ensure good width
-  const windowWidth = Math.max(mainBounds.width, 1000) // Minimum 1000px width
-  const windowHeight = Math.floor(screenSize.height * 0.85) // 85% of screen height
   const windowX = mainBounds.x
   const windowY = Math.max(50, mainBounds.y + mainBounds.height + 10)
   
@@ -2079,13 +1993,21 @@ function expandLLMResponseWindow() {
   console.log(`Expanding LLM Response window from ${currentBounds.width}x${currentBounds.height} to ${windowWidth}x${windowHeight}`)
   console.log(`New position: (${windowX}, ${finalY})`)
   
-  // Set bounds immediately (without animation for now to ensure it works)
+  // Set bounds immediately with validation
   try {
+    // Validate all values before setting bounds
+    const validX = Math.round(isFinite(windowX) ? windowX : 100)
+    const validY = Math.round(isFinite(finalY) ? finalY : 100)
+    const validWidth = Math.round(isFinite(windowWidth) ? windowWidth : 800)
+    const validHeight = Math.round(isFinite(windowHeight) ? windowHeight : 400)
+    
+    console.log(`Setting bounds: x=${validX}, y=${validY}, width=${validWidth}, height=${validHeight}`)
+    
     llmResponseWindow.setBounds({
-      x: windowX,
-      y: finalY,
-      width: windowWidth,
-      height: windowHeight
+      x: validX,
+      y: validY,
+      width: validWidth,
+      height: validHeight
     })
     
     // Verify the expansion worked
@@ -2100,6 +2022,12 @@ function expandLLMResponseWindow() {
     
   } catch (error) {
     console.error('Error expanding LLM response window:', error)
+    // Fallback to safe size
+    try {
+      llmResponseWindow.setBounds({ x: 100, y: 100, width: 800, height: 400 })
+    } catch (fallbackError) {
+      console.error('Even fallback resize failed:', fallbackError)
+    }
   }
 }
 
