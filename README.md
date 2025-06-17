@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# Wyspr
-=======
 # Wysper
 
 An Electron-based desktop application.
@@ -32,4 +29,3 @@ npm run build
 - `main.js` - Main Electron process file
 - `index.html` - Main application window
 - `package.json` - Project configuration and dependencies 
->>>>>>> 1cdd477 (first push)
