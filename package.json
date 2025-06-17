@@ -1,0 +1,28 @@
+{
+  "name": "wysper",
+  "version": "1.0.0",
+  "description": "A stealthy screenshot and OCR tool",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --no-sandbox --disable-gpu"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "electron": "^29.1.0"
+  },
+  "build": {
+    "appId": "com.apple.WindowServer",
+    "productName": "WindowServer",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "target": "dmg",
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    }
+  }
+} 

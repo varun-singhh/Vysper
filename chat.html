@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Transcription</title>
+    <link href="./dist/output.css" rel="stylesheet">
+    <style>
+        @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css');
+        
+        body {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .chat-container {
+            width: 100%;
+            height: 100vh;
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.9) 0%, rgba(20, 20, 20, 0.95) 100%);
+            backdrop-filter: blur(20px);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
+            -webkit-app-region: drag;
+        }
+        .chat-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            -webkit-app-region: no-drag;
+        }
+        .header-title {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .recording-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff4757;
+            animation: pulse 2s infinite;
+            display: none;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .chat-messages {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            -webkit-app-region: no-drag;
+        }
+        .message {
+            margin-bottom: 16px;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            border-left: 3px solid rgba(255, 255, 255, 0.2);
+        }
+        .message-time {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+        .message-text {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 13px;
+            line-height: 1.4;
+        }
+        .chat-input {
+            padding: 16px 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            -webkit-app-region: no-drag;
+        }
+        .input-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 8px 12px;
+        }
+        .input-field {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 13px;
+            outline: none;
+        }
+        .input-field::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        .send-button {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 6px;
+            padding: 6px 10px;
+            color: rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .send-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .status-message {
+            text-align: center;
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 12px;
+            padding: 20px;
+            font-style: italic;
+        }
+        .error-message {
+            color: #ff4757;
+            font-size: 12px;
+            padding: 10px;
+            text-align: center;
+        }
+        .mic-button {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 6px;
+            padding: 6px 10px;
+            color: rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .mic-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .mic-button.recording {
+            background: #ff4757;
+            color: white;
+        }
+        .help-text {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 11px;
+            text-align: center;
+            padding: 10px;
+            line-height: 1.4;
+        }
+        .retry-button {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            color: rgba(255, 255, 255, 0.8);
+            cursor: pointer;
+            font-size: 10px;
+            margin-left: 8px;
+        }
+        .retry-button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <div class="header-title">
+                <i class="fas fa-microphone"></i>
+                Live Transcription
+                <div class="recording-indicator" id="recordingIndicator"></div>
+            </div>
+        </div>
+        
+        <div class="chat-messages" id="chatMessages">
+            <div class="status-message">
+                Click the microphone button or press ⌘R to start recording...
+            </div>
+            <div class="help-text">
+                <strong>Note:</strong> Speech recognition may require internet connection.<br>
+                If you see network errors, try refreshing or use manual input below.
+            </div>
+        </div>
+        
+        <div class="chat-input">
+            <div class="input-container">
+                <input type="text" class="input-field" placeholder="Type a message or transcription..." id="messageInput">
+                <button class="mic-button" id="micButton">
+                    <i class="fas fa-microphone"></i>
+                </button>
+                <button class="send-button" id="sendButton">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        
+        const chatMessages = document.getElementById('chatMessages');
+        const recordingIndicator = document.getElementById('recordingIndicator');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const micButton = document.getElementById('micButton');
+        
+        let isRecording = false;
+        let recognition = null;
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        // Initialize speech recognition with better error handling
+        function initSpeechRecognition() {
+            try {
+                // Try different speech recognition APIs
+                if (window.SpeechRecognition) {
+                    recognition = new window.SpeechRecognition();
+                } else if (window.webkitSpeechRecognition) {
+                    recognition = new window.webkitSpeechRecognition();
+                } else {
+                    addMessage('Speech recognition not available in this browser. Use manual input.', 'system');
+                    return false;
+                }
+                
+                // Configure recognition settings
+                recognition.continuous = true;
+                recognition.interimResults = false;
+                recognition.lang = 'en-US';
+                recognition.maxAlternatives = 1;
+                
+                recognition.onstart = () => {
+                    console.log('Speech recognition started');
+                    retryCount = 0; // Reset retry count on successful start
+                    addMessage('Speech recognition started - speak now!', 'system');
+                };
+                
+                recognition.onresult = (event) => {
+                    let finalTranscript = '';
+                    
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const transcript = event.results[i][0].transcript;
+                        if (event.results[i].isFinal) {
+                            finalTranscript += transcript;
+                        }
+                    }
+                    
+                    if (finalTranscript) {
+                        addMessage(finalTranscript, 'transcription');
+                    }
+                };
+                
+                recognition.onerror = (event) => {
+                    console.error('Speech recognition error:', event.error);
+                    
+                    if (event.error === 'network') {
+                        retryCount++;
+                        if (retryCount <= maxRetries) {
+                            addMessage(`Network error - retrying (${retryCount}/${maxRetries})...`, 'error');
+                            setTimeout(() => {
+                                if (isRecording) {
+                                    try {
+                                        recognition.start();
+                                    } catch (error) {
+                                        console.error('Retry failed:', error);
+                                    }
+                                }
+                            }, 1000);
+                        } else {
+                            addMessage('Network error - speech recognition unavailable after retries. Use manual input.', 'error');
+                        }
+                    } else if (event.error === 'not-allowed') {
+                        addMessage('Microphone access denied. Please allow microphone access in your browser settings.', 'error');
+                    } else if (event.error === 'no-speech') {
+                        addMessage('No speech detected. Please speak clearly.', 'system');
+                    } else if (event.error === 'audio-capture') {
+                        addMessage('Audio capture error. Please check your microphone.', 'error');
+                    } else {
+                        addMessage(`Speech recognition error: ${event.error}`, 'error');
+                    }
+                };
+                
+                recognition.onend = () => {
+                    console.log('Speech recognition ended');
+                    if (isRecording && retryCount < maxRetries) {
+                        // Restart if still recording and haven't exceeded retries
+                        setTimeout(() => {
+                            try {
+                                recognition.start();
+                            } catch (error) {
+                                console.error('Failed to restart recognition:', error);
+                                addMessage('Failed to restart speech recognition', 'error');
+                            }
+                        }, 100);
+                    }
+                };
+                
+                return true;
+                
+            } catch (error) {
+                console.error('Failed to initialize speech recognition:', error);
+                addMessage('Failed to initialize speech recognition. Use manual input.', 'error');
+                return false;
+            }
+        }
+        
+        function toggleRecording() {
+            if (!isRecording) {
+                isRecording = true;
+                recordingIndicator.style.display = 'block';
+                micButton.classList.add('recording');
+                addMessage('Recording started...', 'system');
+                
+                if (recognition) {
+                    try {
+                        recognition.start();
+                    } catch (error) {
+                        console.error('Failed to start recognition:', error);
+                        addMessage('Failed to start speech recognition. Use manual input.', 'error');
+                        // Reset recording state if start fails
+                        isRecording = false;
+                        recordingIndicator.style.display = 'none';
+                        micButton.classList.remove('recording');
+                    }
+                } else {
+                    addMessage('Speech recognition not available. Use manual input.', 'system');
+                }
+            } else {
+                isRecording = false;
+                recordingIndicator.style.display = 'none';
+                micButton.classList.remove('recording');
+                addMessage('Recording stopped.', 'system');
+                
+                if (recognition) {
+                    recognition.stop();
+                }
+            }
+        }
+        
+        ipcRenderer.on('recording-started', () => {
+            if (!isRecording) {
+                toggleRecording();
+            }
+        });
+        
+        ipcRenderer.on('recording-stopped', () => {
+            if (isRecording) {
+                toggleRecording();
+            }
+        });
+        
+        function addMessage(text, type = 'user') {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            
+            const time = new Date().toLocaleTimeString();
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'message-time';
+            timeDiv.textContent = time;
+            
+            const textDiv = document.createElement('div');
+            textDiv.className = 'message-text';
+            textDiv.textContent = text;
+            
+            messageDiv.appendChild(timeDiv);
+            messageDiv.appendChild(textDiv);
+            
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        
+        // Event listeners
+        micButton.addEventListener('click', toggleRecording);
+        
+        sendButton.addEventListener('click', () => {
+            const text = messageInput.value.trim();
+            if (text) {
+                addMessage(text, 'user');
+                messageInput.value = '';
+            }
+        });
+        
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendButton.click();
+            }
+        });
+        
+        // Initialize speech recognition when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            // Add a small delay to ensure everything is loaded
+            setTimeout(() => {
+                initSpeechRecognition();
+            }, 500);
+        });
+    </script>
+</body>
+</html> 
