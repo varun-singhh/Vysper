@@ -1,65 +1,177 @@
 # Wysper
 
-A stealthy Electron-based desktop application for screen capture, speech recognition, and transcription with advanced window management features.
+A stealthy screenshot, OCR, and speech recognition tool built with Electron.
 
 ## Features
 
-- **Stealth Mode**: Transparent, frameless windows that stay on top
-- **Screen Capture**: Take screenshots with OCR text extraction
-- **Speech Recognition**: Real-time audio recording and transcription
-- **Dynamic Controls**: Move window controls between main and chat windows
-- **Keyboard Navigation**: Full keyboard control for all features
-- **Cross-Workspace**: Windows visible across all desktops and workspaces
+- **Screenshot & OCR**: Take screenshots and extract text using Tesseract OCR
+- **Speech Recognition**: Real-time speech-to-text using Microsoft Azure Speech Services
+- **Stealth Mode**: Window hidden from screen sharing tools and Activity Monitor
+- **Global Shortcuts**: Keyboard controls for all functionality
+- **Always on Top**: Window stays visible across all applications and screens
+- **Non-interactive Mode**: Window can be set to pass through mouse events
 
 ## Keyboard Shortcuts
 
-| Shortcut | Action |
-|----------|--------|
-| `⌘+Arrow` | Move window (main or chat based on control state) |
-| `⌘+S` | Take screenshot with OCR |
-| `⌘+R` | Start/Stop recording |
-| `⌘+T` | Toggle chat window |
-| `⌥+Space` | Move controls between windows (when recording) |
-| `⌘+\` | Hide/Show window |
-| `⌥+A` | Toggle window interaction mode |
+- `Cmd+\` - Toggle window visibility (hide/show)
+- `Option+A` - Toggle window interactivity
+- `Cmd+S` - Take screenshot with OCR
+- `Cmd+R` - Start/stop speech recording
+- `Cmd+Shift+R` - Force stop speech recording
+- `Cmd+T` - Toggle chat window visibility (when recording)
+- `Option+Space` - Move controls between main and chat windows (when recording)
+- `Cmd+Arrow Keys` - Move window position
 
-## Development Setup
+## Installation
 
-1. Install dependencies:
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd Wysper
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Install Tesseract OCR** (for screenshot text extraction):
+   ```bash
+   # macOS
+   brew install tesseract
+   
+   # Ubuntu/Debian
+   sudo apt-get install tesseract-ocr
+   
+   # Windows
+   # Download from https://github.com/UB-Mannheim/tesseract/wiki
+   ```
+
+4. **Set up Azure Speech Services**:
+   - Follow the [Azure Speech Setup Guide](AZURE_SPEECH_SETUP.md)
+   - Create an Azure Speech resource and get your credentials
+   - Set environment variables: `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION`
+
+5. **Start the application**:
+   ```bash
+   npm run dev
+   ```
+
+## Configuration
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
 ```bash
-npm install
+# Azure Speech Services
+AZURE_SPEECH_KEY=your_azure_speech_key_here
+AZURE_SPEECH_REGION=your_azure_region_here
 ```
 
-2. Run the application in development mode:
-```bash
-npm run dev
+### Speech Recognition
+
+The app uses Microsoft Azure Speech Services for real-time speech-to-text. Features include:
+
+- Continuous speech recognition
+- Real-time transcription
+- Support for multiple languages
+- High accuracy with Azure's advanced models
+
+### OCR (Optical Character Recognition)
+
+Screenshots are processed using Tesseract OCR to extract text. The extracted text is logged to the console and can be used for further processing.
+
+## Usage
+
+1. **Start the app**: The main window appears as a small transparent tab
+2. **Take screenshots**: Press `Cmd+S` to capture and extract text
+3. **Speech recognition**: Press `Cmd+R` to start recording, speak, then press again to stop
+4. **Hide window**: Press `Cmd+\` to hide the window from screen sharing tools
+5. **Toggle interactivity**: Press `Option+A` to allow/block mouse interactions
+
+## Window Modes
+
+### Normal Mode
+- Window is visible and interactive
+- Can be moved and clicked
+- Standard functionality
+
+### Stealth Mode (`Cmd+\`)
+- Window is hidden from screen sharing tools
+- Still functional with keyboard shortcuts
+- Invisible to other applications
+
+### Non-interactive Mode (`Option+A`)
+- Window passes through mouse events
+- Underlying applications can be clicked through
+- Keyboard shortcuts still work
+- Perfect for overlay functionality
+
+## Speech Recognition Features
+
+- **Real-time transcription**: See text as you speak
+- **Continuous recognition**: No need to restart for each phrase
+- **High accuracy**: Powered by Azure's advanced speech models
+- **Multiple languages**: Support for 100+ languages
+- **Custom models**: Can be trained for specific domains
+
+## Troubleshooting
+
+### Speech Recognition Issues
+
+1. **Check Azure credentials**: Verify `AZURE_SPEECH_KEY` and `AZURE_SPEECH_REGION` are set
+2. **Microphone permissions**: Ensure the app has microphone access
+3. **Internet connection**: Azure Speech Services requires internet access
+4. **Azure quota**: Check your Azure subscription limits
+
+### OCR Issues
+
+1. **Tesseract installation**: Verify Tesseract is installed and in PATH
+2. **Image quality**: Better quality screenshots improve OCR accuracy
+3. **Language support**: Tesseract supports 100+ languages
+
+### Window Visibility Issues
+
+1. **Screen sharing**: Some tools may still detect the window
+2. **Activity Monitor**: The app disguises itself as "WindowServer"
+3. **Permissions**: Ensure the app has necessary system permissions
+
+## Development
+
+### Project Structure
+
+```
+Wysper/
+├── main.js                 # Main Electron process
+├── speech-recognition.js   # Azure Speech Services integration
+├── index.html             # Main window UI
+├── chat.html              # Speech recognition chat window
+├── styles.css             # Main window styles
+├── chat.css               # Chat window styles
+└── package.json           # Dependencies and scripts
 ```
 
-3. Run the application in production mode:
-```bash
-npm start
-```
+### Adding Features
 
-4. Build the application:
-```bash
-npm run build
-```
+1. **New shortcuts**: Add to `main.js` in the `globalShortcut.register` section
+2. **UI changes**: Modify HTML files and corresponding CSS
+3. **Speech features**: Extend `speech-recognition.js` with Azure Speech SDK
+4. **OCR improvements**: Enhance Tesseract configuration in `main.js`
 
-## Project Structure
+## Security & Privacy
 
-- `main.js` - Main Electron process file with window management and shortcuts
-- `index.html` - Main application window with command tab
-- `chat.html` - Chat window for speech recognition and transcription
-- `package.json` - Project configuration and dependencies
+- **Local processing**: Screenshots and OCR processed locally
+- **Azure security**: Speech data sent to Azure with enterprise-grade security
+- **No data storage**: No audio or text data is stored locally
+- **Stealth features**: Window hidden from screen sharing for privacy
 
-## Usage Notes
+## License
 
-- The main window starts in non-interactive mode (click-through)
-- Press `⌥+A` to enable interaction with the window
-- When recording, use `⌥+Space` to move controls to the chat window
-- Windows are designed to be invisible to screen sharing tools
-- Speech recognition requires internet connection for best results
-=======
-- `main.js` - Main Electron process file
-- `index.html` - Main application window
-- `package.json` - Project configuration and dependencies
+ISC License - see LICENSE file for details.
+
+## Support
+
+- [Azure Speech Services Documentation](https://docs.microsoft.com/en-us/azure/cognitive-services/speech-service/)
+- [Tesseract OCR Documentation](https://tesseract-ocr.github.io/)
+- [Electron Documentation](https://www.electronjs.org/docs)

@@ -1,4 +1,7 @@
-const { app, BrowserWindow, screen, globalShortcut, desktopCapturer, ipcMain } = require('electron')
+// Load environment variables from .env file
+require('dotenv').config()
+
+const { app, BrowserWindow, screen, globalShortcut, desktopCapturer, ipcMain, session } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
@@ -51,6 +54,47 @@ async function performOCR(imagePath) {
   }
 }
 
+// Set up permissions before creating windows
+function setupPermissions() {
+  // Handle permission requests
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    console.log('Permission requested:', permission)
+    
+    // Grant microphone and camera permissions
+    if (permission === 'microphone' || permission === 'camera' || permission === 'media') {
+      console.log('Granting permission:', permission)
+      callback(true)
+    } else {
+      console.log('Denying permission:', permission)
+      callback(false)
+    }
+  })
+
+  // Set permission check handler
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+    console.log('Permission check:', permission, 'from:', requestingOrigin)
+    
+    // Allow microphone and media permissions
+    if (permission === 'microphone' || permission === 'media') {
+      return true
+    }
+    
+    return false
+  })
+
+  // Handle device permission requests
+  session.defaultSession.setDevicePermissionHandler((details) => {
+    console.log('Device permission requested:', details)
+    
+    // Allow microphone devices
+    if (details.deviceType === 'microphone') {
+      return true
+    }
+    
+    return false
+  })
+}
+
 function createChatWindow() {
   chatWindow = new BrowserWindow({
     width: 400,
@@ -64,20 +108,44 @@ function createChatWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      webSecurity: false,
+      webSecurity: false, // Disable web security for local development
       allowRunningInsecureContent: true,
-      permissions: ['microphone']
+      experimentalFeatures: true,
+      // Enable media permissions
+      enableRemoteModule: true,
+      // Additional security settings for media access
+      additionalArguments: ['--enable-media-stream', '--allow-running-insecure-content']
     },
     show: false
   })
 
+  // Load the chat HTML file
   chatWindow.loadFile('chat.html')
   
   // Set window to be visible on all workspaces
   chatWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   
+  // Handle window ready
+  chatWindow.webContents.once('dom-ready', () => {
+    console.log('Chat window DOM ready')
+    
+    // Pass environment variables to renderer process
+    chatWindow.webContents.executeJavaScript(`
+      // Make environment variables available to renderer process
+      process.env.AZURE_SPEECH_KEY = '${process.env.AZURE_SPEECH_KEY || ''}';
+      process.env.AZURE_SPEECH_REGION = '${process.env.AZURE_SPEECH_REGION || ''}';
+      console.log('Environment variables set in renderer process');
+    `).catch(err => {
+      console.error('Failed to set environment variables:', err)
+    })
+  })
+
+  chatWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`[CHAT CONSOLE] ${message}`)
+  })
+  
   chatWindow.once('ready-to-show', () => {
-    // Don't show the window initially - it will be shown when recording starts
+    console.log('Chat window ready to show')
     setChatWindowInteractive(false) // Start as non-interactive
   })
   
@@ -85,22 +153,29 @@ function createChatWindow() {
   chatWindow.on('closed', () => {
     chatWindow = null
   })
+
+  // Handle media access requests
+  chatWindow.webContents.on('media-started-playing', () => {
+    console.log('Media started playing in chat window')
+  })
+
+  chatWindow.webContents.on('media-paused', () => {
+    console.log('Media paused in chat window')
+  })
 }
 
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
   
   // Calculate dynamic width based on content
-  // Each command item needs approximately 80-100px
-  // 6 command items + separators + padding = ~600px minimum
   const minWidth = 600
-  const maxWidth = Math.floor(width * 0.8) // Max 80% of screen width
-  const dynamicWidth = Math.max(minWidth, Math.min(maxWidth, 800)) // Sweet spot around 800px
+  const maxWidth = Math.floor(width * 0.8)
+  const dynamicWidth = Math.max(minWidth, Math.min(maxWidth, 800))
   
   mainWindow = new BrowserWindow({
     width: dynamicWidth,
     height: 60,
-    x: Math.floor((width - dynamicWidth) / 2), // Center the window
+    x: Math.floor((width - dynamicWidth) / 2),
     y: 60,
     transparent: true,
     frame: false,
@@ -112,7 +187,8 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
-      backgroundThrottling: false
+      backgroundThrottling: false,
+      webSecurity: false
     }
   })
 
@@ -131,9 +207,13 @@ function createWindow() {
 
   mainWindow.loadFile('index.html')
   
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`[MAIN CONSOLE] ${message}`)
+  })
+  
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
-    setWindowInteractive(false) // Start as non-interactive
+    setWindowInteractive(false)
   })
   
   mainWindow.on('blur', () => {
@@ -241,20 +321,36 @@ function toggleWindowInteraction() {
 // Prevent app from showing in dock and activity monitor
 app.dock?.hide()
 
-// Additional stealth measures for app startup
+// Enable media access command line switches
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors')
 app.commandLine.appendSwitch('disable-site-isolation-trials')
+app.commandLine.appendSwitch('enable-media-stream')
+app.commandLine.appendSwitch('allow-running-insecure-content')
+app.commandLine.appendSwitch('disable-web-security')
+app.commandLine.appendSwitch('ignore-certificate-errors')
+app.commandLine.appendSwitch('allow-insecure-localhost')
+
+// Additional switches for media access
+if (process.platform === 'darwin') {
+  app.commandLine.appendSwitch('enable-features', 'MediaStreamTrack')
+  app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+}
 
 app.whenReady().then(() => {
+  console.log('App ready, setting up permissions...')
+  
+  // Setup permissions first
+  setupPermissions()
+  
   // Hide from Activity Monitor
   if (process.platform === 'darwin') {
-    const { exec } = require('child_process')
     exec('defaults write com.apple.ActivityMonitor ShowCategory -int 0')
   }
   
+  // Create windows
   createWindow()
   createChatWindow()
 
@@ -336,17 +432,28 @@ app.whenReady().then(() => {
   })
 
   globalShortcut.register('CommandOrControl+R', () => {
-    if (chatWindow && !isWindowHidden) {
-      isRecording = !isRecording
-      if (isRecording) {
-        console.log('Recording started')
-        chatWindow.show()
-        chatWindow.focus()
-        chatWindow.webContents.send('recording-started')
+    if (!isWindowHidden) {
+      if (!isRecording) {
+        isRecording = true
+        console.log('Starting speech recognition...')
+        
+        // Show chat window
+        if (chatWindow) {
+          chatWindow.show()
+          chatWindow.focus()
+          // Send message to start recording in renderer process
+          chatWindow.webContents.send('recording-started')
+        }
       } else {
-        console.log('Recording stopped')
-        chatWindow.hide()
-        chatWindow.webContents.send('recording-stopped')
+        isRecording = false
+        console.log('Stopping speech recognition...')
+        
+        // Send message to stop recording in renderer process
+        if (chatWindow) {
+          chatWindow.webContents.send('recording-stopped')
+          chatWindow.hide()
+        }
+        
         // Reset controls to main window when recording stops
         controlsInChat = false
         if (mainWindow) {
@@ -360,11 +467,16 @@ app.whenReady().then(() => {
   })
 
   globalShortcut.register('CommandOrControl+Shift+R', () => {
-    if (chatWindow && !isWindowHidden) {
+    if (!isWindowHidden) {
       isRecording = false
-      console.log('Recording stopped')
-      chatWindow.hide()
-      chatWindow.webContents.send('recording-stopped')
+      console.log('Force stopping speech recognition...')
+      
+      // Send message to stop recording in renderer process
+      if (chatWindow) {
+        chatWindow.webContents.send('recording-stopped')
+        chatWindow.hide()
+      }
+      
       // Reset controls to main window when recording stops
       controlsInChat = false
       if (mainWindow) {
@@ -401,4 +513,53 @@ ipcMain.on('screenshot-taken', (event, imagePath) => {
 
 ipcMain.on('ocr-complete', (event, text) => {
   console.log('OCR Text:', text)
-}) 
+})
+
+ipcMain.on('toggle-recording', (event) => {
+  if (!isWindowHidden) {
+    if (!isRecording) {
+      isRecording = true
+      console.log('Starting speech recognition from chat window...')
+      
+      // Show chat window
+      if (chatWindow) {
+        chatWindow.show()
+        chatWindow.focus()
+        // Send message to start recording in renderer process
+        chatWindow.webContents.send('recording-started')
+      }
+    } else {
+      isRecording = false
+      console.log('Stopping speech recognition from chat window...')
+      
+      // Send message to stop recording in renderer process
+      if (chatWindow) {
+        chatWindow.webContents.send('recording-stopped')
+        chatWindow.hide()
+      }
+      
+      // Reset controls to main window when recording stops
+      controlsInChat = false
+      if (mainWindow) {
+        mainWindow.webContents.send('controls-changed', false)
+      }
+      if (chatWindow) {
+        chatWindow.webContents.send('controls-changed', false)
+      }
+    }
+  }
+})
+
+// Add debugging for media permissions
+ipcMain.on('debug-media-permissions', (event) => {
+  console.log('Debugging media permissions...')
+  
+  // Check system permissions on macOS
+  if (process.platform === 'darwin') {
+    exec('tccutil reset Microphone', (error, stdout, stderr) => {
+      if (error) {
+        console.log('TCC reset failed (this is normal):', error.message)
+      }
+    })
+  }
+})

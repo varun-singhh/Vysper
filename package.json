@@ -5,12 +5,16 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --no-sandbox --disable-gpu"
+    "dev": "electron . --no-sandbox --disable-gpu",
+    "test-speech": "node test-azure-speech.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "electron": "^29.1.0"
+    "dotenv": "^16.3.1",
+    "electron": "^29.1.0",
+    "microsoft-cognitiveservices-speech-sdk": "^1.40.0",
+    "node-record-lpcm16": "^1.0.1"
   },
   "build": {
     "appId": "com.apple.WindowServer",
@@ -25,4 +29,4 @@
       "entitlementsInherit": "build/entitlements.mac.plist"
     }
   }
-} 
+}

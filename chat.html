@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>Transcription</title>
-    <link href="./dist/output.css" rel="stylesheet">
     <style>
         @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css');
         
@@ -72,6 +71,18 @@
             border-radius: 8px;
             border-left: 3px solid rgba(255, 255, 255, 0.2);
             backdrop-filter: blur(5px);
+        }
+        .message.transcription {
+            border-left: 3px solid #4caf50;
+            background: rgba(76, 175, 80, 0.1);
+        }
+        .message.system {
+            border-left: 3px solid #2196f3;
+            background: rgba(33, 150, 243, 0.1);
+        }
+        .message.error {
+            border-left: 3px solid #f44336;
+            background: rgba(244, 67, 54, 0.1);
         }
         .message-time {
             color: rgba(255, 255, 255, 0.6);
@@ -167,18 +178,13 @@
             line-height: 1.4;
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
         }
-        .retry-button {
-            background: rgba(255, 255, 255, 0.1);
-            border: none;
+        .debug-info {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            margin: 10px 0;
             border-radius: 4px;
-            padding: 4px 8px;
-            color: rgba(255, 255, 255, 0.8);
-            cursor: pointer;
-            font-size: 10px;
-            margin-left: 8px;
-        }
-        .retry-button:hover {
-            background: rgba(255, 255, 255, 0.2);
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.7);
         }
         .interaction-indicator {
             position: absolute;
@@ -234,8 +240,8 @@
                 Click the microphone button or press ⌘R to start recording...
             </div>
             <div class="help-text">
-                <strong>Note:</strong> Speech recognition may require internet connection.<br>
-                If you see network errors, try refreshing or use manual input below.
+                <strong>Note:</strong> Speech recognition requires microphone permissions.<br>
+                If you see permission errors, check your browser/system settings.
             </div>
         </div>
         
@@ -251,9 +257,9 @@
             </div>
         </div>
     </div>
-    
+
+    <!-- Interaction indicator -->
     <div class="interaction-indicator" id="interactionIndicator">
-        <i class="fas fa-mouse-pointer"></i>
         <span id="interactionText">Non-Interactive</span>
     </div>
 
@@ -270,10 +276,160 @@
         const interactionText = document.getElementById('interactionText');
         
         let isRecording = false;
-        let recognition = null;
-        let retryCount = 0;
         let isInteractive = false;
-        const maxRetries = 3;
+        let recognizer = null;
+        let speechConfig = null;
+        let audioConfig = null;
+        
+        // Initialize Azure Speech Services
+        async function initializeSpeechServices() {
+            try {
+                // Check if Azure Speech SDK is available
+                if (typeof require !== 'undefined') {
+                    const sdk = require('microsoft-cognitiveservices-speech-sdk');
+                    
+                    // Get credentials from environment (passed from main process)
+                    const subscriptionKey = process.env.AZURE_SPEECH_KEY;
+                    const region = process.env.AZURE_SPEECH_REGION;
+                    
+                    if (!subscriptionKey || !region) {
+                        throw new Error('Azure Speech credentials not found. Please set AZURE_SPEECH_KEY and AZURE_SPEECH_REGION environment variables.');
+                    }
+                    
+                    // Initialize Azure Speech configuration
+                    speechConfig = sdk.SpeechConfig.fromSubscription(subscriptionKey, region);
+                    speechConfig.speechRecognitionLanguage = 'en-US';
+                    speechConfig.enableDictation();
+                    
+                    addMessage('Azure Speech Services initialized successfully', 'system');
+                    return true;
+                } else {
+                    throw new Error('Azure Speech SDK not available');
+                }
+            } catch (error) {
+                addMessage(`Failed to initialize Azure Speech Services: ${error.message}`, 'error');
+                return false;
+            }
+        }
+        
+        // Start speech recognition
+        async function startRecording() {
+            if (isRecording) {
+                console.log('Already recording');
+                return;
+            }
+            
+            if (!speechConfig) {
+                const initialized = await initializeSpeechServices();
+                if (!initialized) {
+                    return;
+                }
+            }
+            
+            try {
+                isRecording = true;
+                recordingIndicator.style.display = 'block';
+                micButton.classList.add('recording');
+                addMessage('Starting Azure Speech recognition...', 'system');
+                
+                // Create audio configuration for microphone input
+                const sdk = require('microsoft-cognitiveservices-speech-sdk');
+                audioConfig = sdk.AudioConfig.fromDefaultMicrophoneInput();
+                
+                // Create speech recognizer
+                recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
+                
+                // Set up event handlers
+                recognizer.recognizing = (s, e) => {
+                    if (e.result.reason === sdk.ResultReason.RecognizingSpeech) {
+                        console.log('Interim transcription:', e.result.text);
+                        addMessage(`Interim: ${e.result.text}`, 'system');
+                    }
+                };
+                
+                recognizer.recognized = (s, e) => {
+                    if (e.result.reason === sdk.ResultReason.RecognizedSpeech) {
+                        console.log('Final transcription:', e.result.text);
+                        addMessage(e.result.text, 'transcription');
+                    } else if (e.result.reason === sdk.ResultReason.NoMatch) {
+                        console.log('No speech detected');
+                    }
+                };
+                
+                recognizer.canceled = (s, e) => {
+                    console.log('Recognition canceled:', e.reason);
+                    if (e.reason === sdk.CancellationReason.Error) {
+                        console.error('Recognition error:', e.errorDetails);
+                        addMessage(`Recognition error: ${e.errorDetails}`, 'error');
+                    }
+                    stopRecording();
+                };
+                
+                recognizer.sessionStopped = (s, e) => {
+                    console.log('Recognition session stopped');
+                    stopRecording();
+                };
+                
+                // Start continuous recognition
+                recognizer.startContinuousRecognitionAsync(
+                    () => {
+                        console.log('Azure Speech recognition started');
+                        addMessage('Recording started - speak now!', 'system');
+                        ipcRenderer.send('recording-started');
+                    },
+                    (error) => {
+                        console.error('Failed to start recognition:', error);
+                        addMessage(`Failed to start recognition: ${error}`, 'error');
+                        isRecording = false;
+                        recordingIndicator.style.display = 'none';
+                        micButton.classList.remove('recording');
+                    }
+                );
+                
+            } catch (error) {
+                console.error('Failed to start recording:', error);
+                addMessage(`Failed to start recording: ${error.message}`, 'error');
+                isRecording = false;
+                recordingIndicator.style.display = 'none';
+                micButton.classList.remove('recording');
+            }
+        }
+        
+        // Stop speech recognition
+        function stopRecording() {
+            if (!isRecording) {
+                return;
+            }
+            
+            isRecording = false;
+            recordingIndicator.style.display = 'none';
+            micButton.classList.remove('recording');
+            addMessage('Stopping Azure Speech recognition...', 'system');
+            
+            // Stop continuous recognition
+            if (recognizer) {
+                recognizer.stopContinuousRecognitionAsync(
+                    () => {
+                        console.log('Azure Speech recognition stopped');
+                        addMessage('Recording stopped', 'system');
+                        ipcRenderer.send('recording-stopped');
+                    },
+                    (error) => {
+                        console.error('Error stopping recognition:', error);
+                    }
+                );
+                
+                // Clean up recognizer
+                recognizer.close();
+                recognizer = null;
+            }
+            
+            // Clean up audio config
+            if (audioConfig) {
+                audioConfig.close();
+                audioConfig = null;
+            }
+        }
         
         // Handle interaction state changes
         ipcRenderer.on('interaction-enabled', () => {
@@ -288,153 +444,36 @@
             showInteractionIndicator('Non-Interactive', false);
         });
         
-        function showInteractionIndicator(text, interactive) {
-            interactionText.textContent = text;
-            interactionIndicator.className = `interaction-indicator show ${interactive ? 'interactive' : 'non-interactive'}`;
-            
-            setTimeout(() => {
-                interactionIndicator.classList.remove('show');
-            }, 2000);
-        }
-        
-        // Initialize speech recognition with better error handling
-        function initSpeechRecognition() {
-            try {
-                // Try different speech recognition APIs
-                if (window.SpeechRecognition) {
-                    recognition = new window.SpeechRecognition();
-                } else if (window.webkitSpeechRecognition) {
-                    recognition = new window.webkitSpeechRecognition();
-                } else {
-                    addMessage('Speech recognition not available in this browser. Use manual input.', 'system');
-                    return false;
-                }
-                
-                // Configure recognition settings
-                recognition.continuous = true;
-                recognition.interimResults = false;
-                recognition.lang = 'en-US';
-                recognition.maxAlternatives = 1;
-                
-                recognition.onstart = () => {
-                    console.log('Speech recognition started');
-                    retryCount = 0; // Reset retry count on successful start
-                    addMessage('Speech recognition started - speak now!', 'system');
-                };
-                
-                recognition.onresult = (event) => {
-                    let finalTranscript = '';
-                    
-                    for (let i = event.resultIndex; i < event.results.length; i++) {
-                        const transcript = event.results[i][0].transcript;
-                        if (event.results[i].isFinal) {
-                            finalTranscript += transcript;
-                        }
-                    }
-                    
-                    if (finalTranscript) {
-                        addMessage(finalTranscript, 'transcription');
-                    }
-                };
-                
-                recognition.onerror = (event) => {
-                    console.error('Speech recognition error:', event.error);
-                    
-                    if (event.error === 'network') {
-                        retryCount++;
-                        if (retryCount <= maxRetries) {
-                            addMessage(`Network error - retrying (${retryCount}/${maxRetries})...`, 'error');
-                            setTimeout(() => {
-                                if (isRecording) {
-                                    try {
-                                        recognition.start();
-                                    } catch (error) {
-                                        console.error('Retry failed:', error);
-                                    }
-                                }
-                            }, 1000);
-                        } else {
-                            addMessage('Network error - speech recognition unavailable after retries. Use manual input.', 'error');
-                        }
-                    } else if (event.error === 'not-allowed') {
-                        addMessage('Microphone access denied. Please allow microphone access in your browser settings.', 'error');
-                    } else if (event.error === 'no-speech') {
-                        addMessage('No speech detected. Please speak clearly.', 'system');
-                    } else if (event.error === 'audio-capture') {
-                        addMessage('Audio capture error. Please check your microphone.', 'error');
-                    } else {
-                        addMessage(`Speech recognition error: ${event.error}`, 'error');
-                    }
-                };
-                
-                recognition.onend = () => {
-                    console.log('Speech recognition ended');
-                    if (isRecording && retryCount < maxRetries) {
-                        // Restart if still recording and haven't exceeded retries
-                        setTimeout(() => {
-                            try {
-                                recognition.start();
-                            } catch (error) {
-                                console.error('Failed to restart recognition:', error);
-                                addMessage('Failed to restart speech recognition', 'error');
-                            }
-                        }, 100);
-                    }
-                };
-                
-                return true;
-                
-            } catch (error) {
-                console.error('Failed to initialize speech recognition:', error);
-                addMessage('Failed to initialize speech recognition. Use manual input.', 'error');
-                return false;
-            }
-        }
-        
-        function toggleRecording() {
-            if (!isRecording) {
-                isRecording = true;
-                recordingIndicator.style.display = 'block';
-                micButton.classList.add('recording');
-                addMessage('Recording started...', 'system');
-                
-                if (recognition) {
-                    try {
-                        recognition.start();
-                    } catch (error) {
-                        console.error('Failed to start recognition:', error);
-                        addMessage('Failed to start speech recognition. Use manual input.', 'error');
-                        // Reset recording state if start fails
-                        isRecording = false;
-                        recordingIndicator.style.display = 'none';
-                        micButton.classList.remove('recording');
-                    }
-                } else {
-                    addMessage('Speech recognition not available. Use manual input.', 'system');
-                }
-            } else {
-                isRecording = false;
-                recordingIndicator.style.display = 'none';
-                micButton.classList.remove('recording');
-                addMessage('Recording stopped.', 'system');
-                
-                if (recognition) {
-                    recognition.stop();
-                }
-            }
-        }
-        
-        // Handle recording requests
+        // Handle speech recognition events from main process (fallback)
         ipcRenderer.on('recording-started', () => {
             if (!isRecording) {
-                toggleRecording();
+                startRecording();
             }
         });
         
         ipcRenderer.on('recording-stopped', () => {
             if (isRecording) {
-                toggleRecording();
+                stopRecording();
             }
+        });
+        
+        ipcRenderer.on('transcription', (event, text) => {
+            if (text && text.trim()) {
+                addMessage(text, 'transcription');
+            }
+        });
+        
+        ipcRenderer.on('interim-transcription', (event, text) => {
+            // Handle interim results if needed
+            console.log('Interim transcription:', text);
+        });
+        
+        ipcRenderer.on('status', (event, message) => {
+            addMessage(message, 'system');
+        });
+        
+        ipcRenderer.on('error', (event, error) => {
+            addMessage(`Error: ${error}`, 'error');
         });
         
         // Handle controls movement
@@ -444,7 +483,7 @@
         
         function addMessage(text, type = 'user') {
             const messageDiv = document.createElement('div');
-            messageDiv.className = 'message';
+            messageDiv.className = `message ${type}`;
             
             const time = new Date().toLocaleTimeString();
             const timeDiv = document.createElement('div');
@@ -462,8 +501,25 @@
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
         
+        function showInteractionIndicator(text, interactive) {
+            if (interactionText) {
+                interactionText.textContent = text;
+                interactionIndicator.className = `interaction-indicator show ${interactive ? 'interactive' : 'non-interactive'}`;
+                
+                setTimeout(() => {
+                    interactionIndicator.classList.remove('show');
+                }, 2000);
+            }
+        }
+        
         // Event listeners
-        micButton.addEventListener('click', toggleRecording);
+        micButton.addEventListener('click', () => {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        });
         
         sendButton.addEventListener('click', () => {
             const text = messageInput.value.trim();
@@ -479,13 +535,11 @@
             }
         });
         
-        // Initialize speech recognition when page loads
-        document.addEventListener('DOMContentLoaded', () => {
-            // Add a small delay to ensure everything is loaded
-            setTimeout(() => {
-                initSpeechRecognition();
-            }, 500);
-        });
+        // Initialize with status message
+        addMessage('Press ⌘+R to start speech recognition...', 'system');
+        
+        // Try to initialize speech services on load
+        initializeSpeechServices();
     </script>
 </body>
-</html> 
+</html>
