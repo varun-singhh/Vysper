@@ -12,122 +12,236 @@
             margin: 0;
             padding: 0;
             overflow: hidden;
-            height: 60px;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            cursor: default;
         }
-        .app-container {
-            position: relative;
+        
+        .container {
             width: 100%;
-            height: 100%;
+            height: 100vh;
             display: flex;
             flex-direction: column;
-            align-items: center;
+            -webkit-app-region: drag;
         }
+        
         .command-tab {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 32px;
+            height: 28px;
             background: linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(20, 20, 20, 0.9) 100%);
-            backdrop-filter: blur(20px);
+            backdrop-filter: blur(15px);
             border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
-            -webkit-app-region: drag;
+            gap: 16px;
+            padding: 0 12px;
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 11px;
+            font-weight: 500;
+            -webkit-app-region: no-drag;
+            flex-wrap: nowrap;
+            overflow: hidden;
             border: 1px solid rgba(255, 255, 255, 0.1);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
         }
-        .commands {
+        
+        .command-item {
             display: flex;
             align-items: center;
-            gap: 16px;
-            padding: 0 20px;
+            gap: 5px;
+            white-space: nowrap;
+            min-width: fit-content;
+            padding: 4px 8px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
         }
-        .command-group {
-            display: flex;
-            align-items: center;
-            gap: 8px;
+        
+        .command-item:hover {
+            background: rgba(255, 255, 255, 0.1);
         }
-        .command-icon {
-            color: rgba(255, 255, 255, 0.9);
-            font-size: 12px;
-            width: 16px;
-            text-align: center;
-        }
-        .command-text {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 11px;
-            font-weight: 500;
-            letter-spacing: 0.5px;
-        }
-        .separator {
+        
+        .command-separator {
             width: 1px;
             height: 16px;
-            background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.2), transparent);
-            margin: 0 4px;
+            background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.3), transparent);
+            flex-shrink: 0;
         }
-        .key-combo {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 4px;
-            padding: 2px 6px;
-            font-size: 10px;
-            color: rgba(255, 255, 255, 0.8);
-            font-weight: 600;
-            letter-spacing: 0.5px;
+        
+        .interaction-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: rgba(255, 255, 255, 0.9);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            z-index: 1000;
         }
-        .recording-icon {
-            color: #ff4757;
-            animation: pulse 2s infinite;
+        
+        .interaction-indicator.show {
+            opacity: 1;
         }
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
+        
+        .interaction-indicator.interactive {
+            background: rgba(76, 175, 80, 0.9);
+        }
+        
+        .interaction-indicator.non-interactive {
+            background: rgba(244, 67, 54, 0.9);
+        }
+        
+        .hidden-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: rgba(255, 255, 255, 0.9);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        .hidden-indicator.show {
+            opacity: 1;
         }
     </style>
 </head>
 <body>
-    <div class="app-container">
+    <div class="container">
         <div class="command-tab">
-            <div class="commands">
-                <div class="command-group">
-                    <i class="fas fa-arrows-alt command-icon"></i>
-                    <span class="command-text">Move</span>
-                    <span class="key-combo">⌘</span>
-                </div>
-                
-                <div class="separator"></div>
-                
-                <div class="command-group">
-                    <i class="fas fa-camera command-icon"></i>
-                    <span class="command-text">Screenshot</span>
-                    <span class="key-combo">⌘H</span>
-                </div>
-                
-                <div class="separator"></div>
-                
-                <div class="command-group">
-                    <i class="fas fa-microphone command-icon" id="recordingIcon"></i>
-                    <span class="command-text">Record</span>
-                    <span class="key-combo">⌘R</span>
-                </div>
+            <div class="command-item">
+                <i class="fas fa-arrows-alt"></i>
+                <span>⌘+Arrow</span>
+            </div>
+            <div class="command-separator"></div>
+            <div class="command-item">
+                <i class="fas fa-camera"></i>
+                <span>⌘+S</span>
+            </div>
+            <div class="command-separator"></div>
+            <div class="command-item">
+                <i class="fas fa-microphone"></i>
+                <span>⌘+R</span>
+            </div>
+            <div class="command-separator"></div>
+            <div class="command-item">
+                <i class="fas fa-comments"></i>
+                <span>⌘+T</span>
+            </div>
+            <div class="command-separator"></div>
+            <div class="command-item">
+                <i class="fas fa-exchange-alt"></i>
+                <span>⌥+Space</span>
+            </div>
+            <div class="command-separator"></div>
+            <div class="command-item">
+                <i class="fas fa-eye-slash"></i>
+                <span>⌘+\</span>
+            </div>
+            <div class="command-separator"></div>
+            <div class="command-item">
+                <i class="fas fa-mouse-pointer"></i>
+                <span>⌥+A</span>
             </div>
         </div>
+    </div>
+    
+    <div class="interaction-indicator" id="interactionIndicator">
+        <i class="fas fa-mouse-pointer"></i>
+        <span id="interactionText">Non-Interactive</span>
+    </div>
+    
+    <div class="hidden-indicator" id="hiddenIndicator">
+        <i class="fas fa-eye-slash"></i>
+        <span>Window Hidden - Press ⌘+\ to show</span>
     </div>
 
     <script>
         const { ipcRenderer } = require('electron');
-        const recordingIcon = document.getElementById('recordingIcon');
         
+        const interactionIndicator = document.getElementById('interactionIndicator');
+        const interactionText = document.getElementById('interactionText');
+        const hiddenIndicator = document.getElementById('hiddenIndicator');
+        
+        let isInteractive = false;
+        let isHidden = false;
+        
+        // Handle interaction state changes
+        ipcRenderer.on('interaction-enabled', () => {
+            isInteractive = true;
+            showInteractionIndicator('Interactive', true);
+        });
+        
+        ipcRenderer.on('interaction-disabled', () => {
+            isInteractive = false;
+            showInteractionIndicator('Non-Interactive', false);
+        });
+        
+        function showInteractionIndicator(text, interactive) {
+            interactionText.textContent = text;
+            interactionIndicator.className = `interaction-indicator show ${interactive ? 'interactive' : 'non-interactive'}`;
+            
+            setTimeout(() => {
+                interactionIndicator.classList.remove('show');
+            }, 2000);
+        }
+        
+        function showHiddenIndicator() {
+            hiddenIndicator.classList.add('show');
+            
+            setTimeout(() => {
+                hiddenIndicator.classList.remove('show');
+            }, 3000);
+        }
+        
+        // Handle screenshot requests
+        ipcRenderer.on('take-screenshot', () => {
+            console.log('Taking screenshot...');
+            // Screenshot functionality will be handled by main process
+        });
+        
+        // Handle recording requests
         ipcRenderer.on('recording-started', () => {
-            recordingIcon.classList.add('recording-icon');
+            console.log('Recording started');
         });
         
         ipcRenderer.on('recording-stopped', () => {
-            recordingIcon.classList.remove('recording-icon');
+            console.log('Recording stopped');
+        });
+        
+        // Handle controls movement
+        ipcRenderer.on('controls-changed', (event, inChat) => {
+            if (inChat) {
+                showInteractionIndicator('Controls moved to chat window', false);
+            } else {
+                showInteractionIndicator('Controls moved to main window', true);
+            }
+        });
+        
+        // Keyboard shortcuts for local testing
+        document.addEventListener('keydown', (e) => {
+            if (e.metaKey && e.key === '\\') {
+                isHidden = !isHidden;
+                if (isHidden) {
+                    showHiddenIndicator();
+                }
+            }
+            
+            if (e.altKey && e.key === 'A') {
+                isInteractive = !isInteractive;
+                showInteractionIndicator(isInteractive ? 'Interactive' : 'Non-Interactive', isInteractive);
+            }
         });
     </script>
 </body>

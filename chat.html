@@ -163,10 +163,47 @@
         .retry-button:hover {
             background: rgba(255, 255, 255, 0.2);
         }
+        .interaction-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: rgba(255, 255, 255, 0.9);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        .interaction-indicator.show {
+            opacity: 1;
+        }
+        .interaction-indicator.interactive {
+            background: rgba(76, 175, 80, 0.9);
+        }
+        .interaction-indicator.non-interactive {
+            background: rgba(244, 67, 54, 0.9);
+        }
+        .non-interactive .input-container {
+            pointer-events: none;
+            opacity: 0.5;
+        }
+        .non-interactive .mic-button {
+            pointer-events: none;
+            opacity: 0.5;
+        }
+        .non-interactive .send-button {
+            pointer-events: none;
+            opacity: 0.5;
+        }
     </style>
 </head>
 <body>
-    <div class="chat-container">
+    <div class="chat-container" id="chatContainer">
         <div class="chat-header">
             <div class="header-title">
                 <i class="fas fa-microphone"></i>
@@ -197,6 +234,11 @@
             </div>
         </div>
     </div>
+    
+    <div class="interaction-indicator" id="interactionIndicator">
+        <i class="fas fa-mouse-pointer"></i>
+        <span id="interactionText">Non-Interactive</span>
+    </div>
 
     <script>
         const { ipcRenderer } = require('electron');
@@ -206,11 +248,37 @@
         const messageInput = document.getElementById('messageInput');
         const sendButton = document.getElementById('sendButton');
         const micButton = document.getElementById('micButton');
+        const chatContainer = document.getElementById('chatContainer');
+        const interactionIndicator = document.getElementById('interactionIndicator');
+        const interactionText = document.getElementById('interactionText');
         
         let isRecording = false;
         let recognition = null;
         let retryCount = 0;
+        let isInteractive = false;
         const maxRetries = 3;
+        
+        // Handle interaction state changes
+        ipcRenderer.on('interaction-enabled', () => {
+            isInteractive = true;
+            chatContainer.classList.remove('non-interactive');
+            showInteractionIndicator('Interactive', true);
+        });
+        
+        ipcRenderer.on('interaction-disabled', () => {
+            isInteractive = false;
+            chatContainer.classList.add('non-interactive');
+            showInteractionIndicator('Non-Interactive', false);
+        });
+        
+        function showInteractionIndicator(text, interactive) {
+            interactionText.textContent = text;
+            interactionIndicator.className = `interaction-indicator show ${interactive ? 'interactive' : 'non-interactive'}`;
+            
+            setTimeout(() => {
+                interactionIndicator.classList.remove('show');
+            }, 2000);
+        }
         
         // Initialize speech recognition with better error handling
         function initSpeechRecognition() {
@@ -339,6 +407,7 @@
             }
         }
         
+        // Handle recording requests
         ipcRenderer.on('recording-started', () => {
             if (!isRecording) {
                 toggleRecording();
@@ -348,6 +417,15 @@
         ipcRenderer.on('recording-stopped', () => {
             if (isRecording) {
                 toggleRecording();
+            }
+        });
+        
+        // Handle controls movement
+        ipcRenderer.on('controls-changed', (event, inChat) => {
+            if (inChat) {
+                showInteractionIndicator('Controls active on chat window', true);
+            } else {
+                showInteractionIndicator('Controls moved to main window', false);
             }
         });
         

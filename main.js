@@ -17,6 +17,9 @@ if (process.platform === 'darwin') {
 let mainWindow = null
 let chatWindow = null
 let isRecording = false
+let isWindowHidden = false
+let isWindowInteractive = false
+let controlsInChat = false
 
 async function performOCR(imagePath) {
   try {
@@ -75,6 +78,7 @@ function createChatWindow() {
   
   chatWindow.once('ready-to-show', () => {
     chatWindow.show()
+    setChatWindowInteractive(false) // Start as non-interactive
   })
   
   // Handle window close
@@ -83,27 +87,28 @@ function createChatWindow() {
   })
 }
 
-function createWindow () {
-  // Get the primary display
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const { width } = primaryDisplay.workAreaSize
+function createWindow() {
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize
   
-  // Set window dimensions - increased width to fit all components
-  const windowWidth = Math.floor(width / 2)  // Increased from 1/3 to 1/2 of screen width
-  const windowHeight = 60  // 20px preview + 20px tab + 20px gap
-
+  // Calculate dynamic width based on content
+  // Each command item needs approximately 80-100px
+  // 6 command items + separators + padding = ~600px minimum
+  const minWidth = 600
+  const maxWidth = Math.floor(width * 0.8) // Max 80% of screen width
+  const dynamicWidth = Math.max(minWidth, Math.min(maxWidth, 800)) // Sweet spot around 800px
+  
   mainWindow = new BrowserWindow({
-    width: windowWidth,
-    height: windowHeight,
-    x: 0,
-    y: 0,
+    width: dynamicWidth,
+    height: 60,
+    x: Math.floor((width - dynamicWidth) / 2), // Center the window
+    y: 60,
     transparent: true,
     frame: false,
+    alwaysOnTop: true,
     skipTaskbar: true,
     show: false,
     hasShadow: false,
     fullscreenable: false,
-    alwaysOnTop: true,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -111,33 +116,26 @@ function createWindow () {
     }
   })
 
-  // Additional stealth measures
+  // Stealth measures
   mainWindow.setSkipTaskbar(true)
   mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
   mainWindow.setVisibleOnAllWorkspaces(true)
   mainWindow.setBackgroundColor('#00000000')
-  
-  // Prevent window from being captured
   mainWindow.setWindowButtonVisibility(false)
   mainWindow.setAutoHideMenuBar(true)
   mainWindow.setMenuBarVisibility(false)
-  
-  // Make window undetectable by screen sharing
   mainWindow.setFullScreenable(false)
   mainWindow.setResizable(false)
   mainWindow.setMovable(true)
-  
-  // Set window to be completely transparent to screen capture
   mainWindow.setOpacity(1)
-  
+
   mainWindow.loadFile('index.html')
   
-  // Show window after it's ready
   mainWindow.once('ready-to-show', () => {
     mainWindow.show()
+    setWindowInteractive(false) // Start as non-interactive
   })
-
-  // Keep window on top and visible
+  
   mainWindow.on('blur', () => {
     mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
     mainWindow.setVisibleOnAllWorkspaces(true)
@@ -172,84 +170,72 @@ function createWindow () {
       }
     })
   }
+}
 
-  // Register keyboard shortcuts for window movement
-  globalShortcut.register('CommandOrControl+Left', () => {
-    const [x, y] = mainWindow.getPosition()
-    mainWindow.setPosition(x - 50, y)
-  })
+function setWindowInteractive(interactive) {
+  isWindowInteractive = interactive
+  if (mainWindow) {
+    mainWindow.setIgnoreMouseEvents(!interactive, { forward: true })
+    mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+    mainWindow.setVisibleOnAllWorkspaces(true)
+  }
+}
 
-  globalShortcut.register('CommandOrControl+Right', () => {
-    const [x, y] = mainWindow.getPosition()
-    mainWindow.setPosition(x + 50, y)
-  })
+function setChatWindowInteractive(interactive) {
+  if (chatWindow) {
+    chatWindow.setIgnoreMouseEvents(!interactive, { forward: true })
+    chatWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+    chatWindow.setVisibleOnAllWorkspaces(true)
+  }
+}
 
-  globalShortcut.register('CommandOrControl+Up', () => {
-    const [x, y] = mainWindow.getPosition()
-    mainWindow.setPosition(x, y - 50)
-  })
-
-  globalShortcut.register('CommandOrControl+Down', () => {
-    const [x, y] = mainWindow.getPosition()
-    mainWindow.setPosition(x, y + 50)
-  })
-
-  // Register screenshot shortcut
-  globalShortcut.register('CommandOrControl+H', async () => {
-    try {
-      console.log('Screenshot shortcut triggered')
-      const sources = await desktopCapturer.getSources({ 
-        types: ['screen'],
-        thumbnailSize: { width: 1920, height: 1080 } // Full resolution for better OCR
-      })
-      
-      if (sources.length > 0) {
-        console.log('Screenshot captured')
-        
-        // Save screenshot to temp file
-        const base64Data = sources[0].thumbnail.toDataURL().replace(/^data:image\/png;base64,/, '')
-        const tempPath = path.join(os.tmpdir(), 'screenshot.png')
-        fs.writeFileSync(tempPath, base64Data, 'base64')
-        console.log('Screenshot saved to:', tempPath)
-
-        // Process OCR using tesseract
-        const text = await performOCR(tempPath)
-        if (text) {
-          console.log('Extracted Text:', text)
-        } else {
-          console.log('No text was extracted')
-        }
-
-        // Clean up temp file
-        try {
-          fs.unlinkSync(tempPath)
-          console.log('Temporary file cleaned up')
-        } catch (error) {
-          console.error('Cleanup error:', error)
-        }
-      }
-    } catch (error) {
-      console.error('Screenshot/OCR failed:', error)
+function toggleWindowVisibility() {
+  if (isWindowHidden) {
+    // Show window
+    if (mainWindow) {
+      mainWindow.show()
+      mainWindow.focus()
     }
-  })
+    if (chatWindow) {
+      chatWindow.show()
+    }
+    isWindowHidden = false
+    console.log('Window shown')
+  } else {
+    // Hide window
+    if (mainWindow) {
+      mainWindow.hide()
+    }
+    if (chatWindow) {
+      chatWindow.hide()
+    }
+    isWindowHidden = true
+    console.log('Window hidden')
+  }
+}
 
-  // Register recording shortcut
-  globalShortcut.register('CommandOrControl+R', () => {
-    if (!chatWindow) {
-      createChatWindow()
+function toggleWindowInteraction() {
+  const newInteractiveState = !isWindowInteractive
+  setWindowInteractive(newInteractiveState)
+  setChatWindowInteractive(newInteractiveState)
+  
+  if (newInteractiveState) {
+    console.log('Window interaction enabled')
+    if (mainWindow) {
+      mainWindow.webContents.send('interaction-enabled')
     }
-    
-    isRecording = !isRecording
-    if (isRecording) {
-      console.log('Recording started')
-      mainWindow.webContents.send('recording-started')
-      chatWindow.webContents.send('recording-started')
-    } else {
-      console.log('Recording stopped')
-      mainWindow.webContents.send('recording-stopped')
-      chatWindow.webContents.send('recording-stopped')
+    if (chatWindow) {
+      chatWindow.webContents.send('interaction-enabled')
     }
-  })
+  } else {
+    console.log('Window interaction disabled')
+    if (mainWindow) {
+      mainWindow.webContents.send('interaction-disabled')
+    }
+    if (chatWindow) {
+      chatWindow.webContents.send('interaction-disabled')
+    }
+  }
 }
 
 // Prevent app from showing in dock and activity monitor
@@ -270,6 +256,121 @@ app.whenReady().then(() => {
   }
   
   createWindow()
+  createChatWindow()
+
+  // Register global shortcuts
+  globalShortcut.register('CommandOrControl+\\', () => {
+    toggleWindowVisibility()
+  })
+
+  globalShortcut.register('Alt+A', () => {
+    toggleWindowInteraction()
+  })
+
+  globalShortcut.register('Alt+Space', () => {
+    if (isRecording) {
+      controlsInChat = !controlsInChat
+      console.log(`Controls moved to ${controlsInChat ? 'chat window' : 'main window'}`)
+      
+      // Send notification to both windows
+      if (mainWindow) {
+        mainWindow.webContents.send('controls-changed', controlsInChat)
+      }
+      if (chatWindow) {
+        chatWindow.webContents.send('controls-changed', controlsInChat)
+      }
+    }
+  })
+
+  globalShortcut.register('CommandOrControl+Left', () => {
+    const targetWindow = controlsInChat && isRecording ? chatWindow : mainWindow
+    if (targetWindow && !isWindowHidden) {
+      const [x, y] = targetWindow.getPosition()
+      targetWindow.setPosition(Math.max(0, x - 50), y)
+    }
+  })
+
+  globalShortcut.register('CommandOrControl+Right', () => {
+    const targetWindow = controlsInChat && isRecording ? chatWindow : mainWindow
+    if (targetWindow && !isWindowHidden) {
+      const [x, y] = targetWindow.getPosition()
+      const { width } = screen.getPrimaryDisplay().workAreaSize
+      const windowWidth = targetWindow.getBounds().width
+      targetWindow.setPosition(Math.min(width - windowWidth, x + 100), y)
+    }
+  })
+
+  globalShortcut.register('CommandOrControl+Up', () => {
+    const targetWindow = controlsInChat && isRecording ? chatWindow : mainWindow
+    if (targetWindow && !isWindowHidden) {
+      const [x, y] = targetWindow.getPosition()
+      targetWindow.setPosition(x, Math.max(0, y - 50))
+    }
+  })
+
+  globalShortcut.register('CommandOrControl+Down', () => {
+    const targetWindow = controlsInChat && isRecording ? chatWindow : mainWindow
+    if (targetWindow && !isWindowHidden) {
+      const [x, y] = targetWindow.getPosition()
+      const { height } = screen.getPrimaryDisplay().workAreaSize
+      const windowHeight = targetWindow.getBounds().height
+      targetWindow.setPosition(x, Math.min(height - windowHeight, y + 50))
+    }
+  })
+
+  globalShortcut.register('CommandOrControl+S', () => {
+    if (mainWindow && !isWindowHidden) {
+      mainWindow.webContents.send('take-screenshot')
+    }
+  })
+
+  globalShortcut.register('CommandOrControl+T', () => {
+    if (chatWindow && !isWindowHidden) {
+      if (chatWindow.isVisible()) {
+        chatWindow.hide()
+      } else {
+        chatWindow.show()
+        chatWindow.focus()
+      }
+    }
+  })
+
+  globalShortcut.register('CommandOrControl+R', () => {
+    if (chatWindow && !isWindowHidden) {
+      isRecording = !isRecording
+      if (isRecording) {
+        console.log('Recording started')
+        chatWindow.webContents.send('recording-started')
+      } else {
+        console.log('Recording stopped')
+        chatWindow.webContents.send('recording-stopped')
+        // Reset controls to main window when recording stops
+        controlsInChat = false
+        if (mainWindow) {
+          mainWindow.webContents.send('controls-changed', false)
+        }
+        if (chatWindow) {
+          chatWindow.webContents.send('controls-changed', false)
+        }
+      }
+    }
+  })
+
+  globalShortcut.register('CommandOrControl+Shift+R', () => {
+    if (chatWindow && !isWindowHidden) {
+      isRecording = false
+      console.log('Recording stopped')
+      chatWindow.webContents.send('recording-stopped')
+      // Reset controls to main window when recording stops
+      controlsInChat = false
+      if (mainWindow) {
+        mainWindow.webContents.send('controls-changed', false)
+      }
+      if (chatWindow) {
+        chatWindow.webContents.send('controls-changed', false)
+      }
+    }
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -287,4 +388,13 @@ app.on('window-all-closed', () => {
 // Unregister all shortcuts when app is quitting
 app.on('will-quit', () => {
   globalShortcut.unregisterAll()
+})
+
+// IPC handlers
+ipcMain.on('screenshot-taken', (event, imagePath) => {
+  console.log('Screenshot saved:', imagePath)
+})
+
+ipcMain.on('ocr-complete', (event, text) => {
+  console.log('OCR Text:', text)
 }) 
