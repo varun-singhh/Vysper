@@ -280,6 +280,9 @@
         let recognizer = null;
         let speechConfig = null;
         let audioConfig = null;
+        let currentTranscription = '';
+        let transcriptionTimeout = null;
+        let lastTranscriptionTime = 0;
         
         // Initialize Azure Speech Services
         async function initializeSpeechServices() {
@@ -312,6 +315,29 @@
             }
         }
         
+        // Display accumulated transcription with pause detection
+        function displayTranscription(text) {
+            const now = Date.now();
+            const timeSinceLastTranscription = now - lastTranscriptionTime;
+            
+            // Clear existing timeout
+            if (transcriptionTimeout) {
+                clearTimeout(transcriptionTimeout);
+            }
+            
+            // Update current transcription
+            currentTranscription = text;
+            lastTranscriptionTime = now;
+            
+            // Set timeout to display transcription after pause (1.5 seconds)
+            transcriptionTimeout = setTimeout(() => {
+                if (currentTranscription && currentTranscription.trim()) {
+                    addMessage(currentTranscription, 'transcription');
+                    currentTranscription = '';
+                }
+            }, 1500);
+        }
+        
         // Start speech recognition
         async function startRecording() {
             if (isRecording) {
@@ -332,6 +358,13 @@
                 micButton.classList.add('recording');
                 addMessage('Starting Azure Speech recognition...', 'system');
                 
+                // Reset transcription state
+                currentTranscription = '';
+                lastTranscriptionTime = 0;
+                if (transcriptionTimeout) {
+                    clearTimeout(transcriptionTimeout);
+                }
+                
                 // Create audio configuration for microphone input
                 const sdk = require('microsoft-cognitiveservices-speech-sdk');
                 audioConfig = sdk.AudioConfig.fromDefaultMicrophoneInput();
@@ -343,16 +376,26 @@
                 recognizer.recognizing = (s, e) => {
                     if (e.result.reason === sdk.ResultReason.RecognizingSpeech) {
                         console.log('Interim transcription:', e.result.text);
-                        addMessage(`Interim: ${e.result.text}`, 'system');
+                        // Don't display interim results, just accumulate
+                        currentTranscription = e.result.text;
                     }
                 };
                 
                 recognizer.recognized = (s, e) => {
                     if (e.result.reason === sdk.ResultReason.RecognizedSpeech) {
                         console.log('Final transcription:', e.result.text);
-                        addMessage(e.result.text, 'transcription');
+                        // Display the final transcription immediately
+                        if (e.result.text && e.result.text.trim()) {
+                            addMessage(e.result.text, 'transcription');
+                            currentTranscription = '';
+                        }
                     } else if (e.result.reason === sdk.ResultReason.NoMatch) {
                         console.log('No speech detected');
+                        // If no speech detected, display any accumulated text
+                        if (currentTranscription && currentTranscription.trim()) {
+                            addMessage(currentTranscription, 'transcription');
+                            currentTranscription = '';
+                        }
                     }
                 };
                 
@@ -405,6 +448,18 @@
             recordingIndicator.style.display = 'none';
             micButton.classList.remove('recording');
             addMessage('Stopping Azure Speech recognition...', 'system');
+            
+            // Display any remaining transcription
+            if (currentTranscription && currentTranscription.trim()) {
+                addMessage(currentTranscription, 'transcription');
+                currentTranscription = '';
+            }
+            
+            // Clear timeout
+            if (transcriptionTimeout) {
+                clearTimeout(transcriptionTimeout);
+                transcriptionTimeout = null;
+            }
             
             // Stop continuous recognition
             if (recognizer) {
