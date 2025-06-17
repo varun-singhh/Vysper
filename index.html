@@ -120,13 +120,27 @@
         #skillIndicator {
             background: rgba(76, 175, 80, 0.1);
             border: 1px solid rgba(76, 175, 80, 0.3);
-            color: #4CAF50;
+            color: #ffffff;;
+            transition: all 0.3s ease;
         }
         
         #skillIndicator:hover {
             background: rgba(76, 175, 80, 0.2);
-            border-color: rgba(76, 175, 80, 0.5);
-            color: #4CAF50;
+            border-color: rgba(255, 255, 255, 0.5);
+            color: #ffffff;
+        }
+        
+        #skillIndicator.non-interactive {
+            background: rgba(76, 175, 80, 0.05);
+            border-color: rgba(76, 175, 80, 0.15);
+            color: #ffffff;;
+            opacity: 0.7;
+        }
+        
+        #skillIndicator.non-interactive:hover {
+            background: rgba(76, 175, 80, 0.05);
+            border-color: rgba(76, 175, 80, 0.15);
+            color: #ffffff;;
         }
     </style>
 </head>
@@ -180,11 +194,13 @@
         ipcRenderer.on('interaction-enabled', () => {
             isInteractive = true;
             statusDot.className = 'status-dot interactive';
+            skillIndicator.classList.remove('non-interactive');
         });
         
         ipcRenderer.on('interaction-disabled', () => {
             isInteractive = false;
             statusDot.className = 'status-dot non-interactive';
+            skillIndicator.classList.add('non-interactive');
         });
         
         function showHiddenIndicator() {
@@ -448,6 +464,12 @@
             const skillSpan = skillIndicator.querySelector('span');
             if (skillSpan) {
                 skillSpan.textContent = skillName;
+                
+                // Update the title attribute for tooltip
+                const tooltip = isInteractive ? 
+                    `${skillName} - Use ⌘↑/↓ to navigate skills` : 
+                    `${skillName} - Enable interactive mode (Alt+A) to navigate`;
+                skillIndicator.title = tooltip;
                 
                 // Add a subtle animation to indicate change
                 skillIndicator.style.transform = 'scale(1.1)';

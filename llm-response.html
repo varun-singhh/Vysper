@@ -19,21 +19,22 @@
             -webkit-app-region: no-drag;
         }
         .markdown-content {
-            line-height: 1.6;
+            line-height: 1.5;
             color: white;
+            font-size: 0.875rem; /* 14px - smaller but readable */
         }
         .markdown-content h1, .markdown-content h2, .markdown-content h3 {
-            margin-top: 1.5rem;
-            margin-bottom: 1rem;
+            margin-top: 1.2rem;
+            margin-bottom: 0.8rem;
             font-weight: bold;
             color: white;
         }
-        .markdown-content h1 { font-size: 1.5rem; }
-        .markdown-content h2 { font-size: 1.25rem; }
-        .markdown-content h3 { font-size: 1.1rem; }
-        .markdown-content p { margin-bottom: 1rem; color: white; }
-        .markdown-content ul, .markdown-content ol { margin-bottom: 1rem; padding-left: 1.5rem; }
-        .markdown-content li { margin-bottom: 0.5rem; color: white; }
+        .markdown-content h1 { font-size: 1.2rem; } /* Smaller headers */
+        .markdown-content h2 { font-size: 1.1rem; }
+        .markdown-content h3 { font-size: 1rem; }
+        .markdown-content p { margin-bottom: 0.8rem; color: white; font-size: 0.875rem; }
+        .markdown-content ul, .markdown-content ol { margin-bottom: 0.8rem; padding-left: 1.2rem; font-size: 0.875rem; }
+        .markdown-content li { margin-bottom: 0.4rem; color: white; font-size: 0.875rem; }
         .markdown-content code { 
             background-color: rgba(0, 0, 0, 0.4); 
             padding: 0.2rem 0.4rem; 
@@ -71,11 +72,29 @@
         }
         .text-panel, .code-panel {
             overflow-y: auto;
+            overflow-x: auto;
             padding: 0.75rem;
             border-radius: 0.375rem;
             background-color: rgba(0, 0, 0, 0);
             border-radius: 0.375rem;
             max-height: 100%;
+        }
+        
+        /* Hide scrollbars but keep functionality */
+        .text-panel::-webkit-scrollbar, .code-panel::-webkit-scrollbar, .full-content::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .text-panel, .code-panel, .full-content {
+            -ms-overflow-style: none;  /* Internet Explorer 10+ */
+            scrollbar-width: none;  /* Firefox */
+        }
+        
+        /* Enable smooth scrolling when interactive */
+        .interactive-scrolling .text-panel, 
+        .interactive-scrolling .code-panel, 
+        .interactive-scrolling .full-content {
+            scroll-behavior: smooth;
         }
         .text-panel {
           background-color: rgba(0, 0, 0, 0);
@@ -160,6 +179,7 @@
             border: 1px solid rgba(255, 255, 255, 0.1);
             height: calc(100vh - 1.5rem);
             overflow-y: auto;
+            overflow-x: auto;
         }
         /* Override Prism theme for better visibility */
         .token.comment,
@@ -235,8 +255,7 @@
     <!-- Loading State -->
     <div id="loading" class="loading">
         <div class="text-center">
-            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-3"></div>
-            <p class="text-gray-300 text-sm">Generating response...</p>
+            <p class="text-gray-300 text-lg font-medium">Generating...</p>
         </div>
     </div>
 
@@ -267,6 +286,7 @@
         let currentLayout = 'split';
         let hasCode = false;
         let currentSkill = 'dsa';
+        let isInteractive = false;
 
         // Configure marked for better rendering
         marked.setOptions({
@@ -297,6 +317,19 @@
             console.log('Window size:', window.innerWidth, 'x', window.innerHeight);
             hideLoadingState();
             displayResponse(data);
+        });
+
+        // Handle interaction state changes
+        ipcRenderer.on('interaction-enabled', () => {
+            isInteractive = true;
+            document.body.classList.add('interactive-scrolling');
+            console.log('LLM Response window - Interactive mode enabled');
+        });
+
+        ipcRenderer.on('interaction-disabled', () => {
+            isInteractive = false;
+            document.body.classList.remove('interactive-scrolling');
+            console.log('LLM Response window - Interactive mode disabled');
         });
 
         function showLoadingState() {
@@ -455,6 +488,41 @@
         // Handle window close
         window.addEventListener('beforeunload', () => {
             console.log('LLM Response window closing');
+        });
+
+        // Enhanced scrolling support for interactive mode
+        let scrollSensitivity = 3; // Adjust scroll speed
+
+        function handleWheelEvent(e) {
+            if (!isInteractive) return;
+            
+            e.preventDefault();
+            
+            const target = e.currentTarget;
+            const deltaX = e.deltaX * scrollSensitivity;
+            const deltaY = e.deltaY * scrollSensitivity;
+            
+            // Smooth scrolling
+            target.scrollBy({
+                left: deltaX,
+                top: deltaY,
+                behavior: 'smooth'
+            });
+        }
+
+        // Add enhanced scrolling to all scrollable containers
+        document.addEventListener('DOMContentLoaded', () => {
+            const scrollableElements = [
+                document.getElementById('text-content'),
+                document.getElementById('code-content'), 
+                document.getElementById('full-content'),
+                document.querySelector('.text-panel'),
+                document.querySelector('.code-panel')
+            ].filter(el => el !== null);
+
+            scrollableElements.forEach(element => {
+                element.addEventListener('wheel', handleWheelEvent, { passive: false });
+            });
         });
     </script>
 </body>

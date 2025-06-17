@@ -467,9 +467,9 @@
                 ipcRenderer.send('activate-skill', activeSkill);
             }
             
-            // Handle Cmd+Up/Down for skill navigation when skills window is focused
+            // Handle Cmd+Up/Down for skill navigation when skills window is focused and interactive
             // This works in conjunction with global shortcuts
-            if ((e.metaKey || e.ctrlKey) && document.hasFocus()) {
+            if ((e.metaKey || e.ctrlKey) && document.hasFocus() && isInteractive) {
                 if (e.key === 'ArrowUp') {
                     e.preventDefault();
                     e.stopPropagation();

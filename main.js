@@ -516,6 +516,9 @@ function toggleWindowInteraction() {
     if (skillsWindow) {
       skillsWindow.webContents.send('interaction-enabled')
     }
+    if (llmResponseWindow) {
+      llmResponseWindow.webContents.send('interaction-enabled')
+    }
   } else {
     console.log('Window interaction disabled')
     addToSessionMemory('Window interaction disabled')
@@ -527,6 +530,9 @@ function toggleWindowInteraction() {
     }
     if (skillsWindow) {
       skillsWindow.webContents.send('interaction-disabled')
+    }
+    if (llmResponseWindow) {
+      llmResponseWindow.webContents.send('interaction-disabled')
     }
   }
 }
@@ -730,17 +736,29 @@ app.whenReady().then(() => {
 
   globalShortcut.register('CommandOrControl+Up', () => {
     if (!isWindowHidden) {
-      const prevSkill = getPreviousSkill()
-      setActiveSkill(prevSkill)
-      console.log('Switched to previous skill:', prevSkill)
+      if (isWindowInteractive) {
+        // Interactive mode: Navigate skills
+        const prevSkill = getPreviousSkill()
+        setActiveSkill(prevSkill)
+        console.log('Switched to previous skill:', prevSkill)
+      } else {
+        // Non-interactive mode: Move windows up
+        moveActiveWindow('up')
+      }
     }
   })
 
   globalShortcut.register('CommandOrControl+Down', () => {
     if (!isWindowHidden) {
-      const nextSkill = getNextSkill()
-      setActiveSkill(nextSkill)
-      console.log('Switched to next skill:', nextSkill)
+      if (isWindowInteractive) {
+        // Interactive mode: Navigate skills
+        const nextSkill = getNextSkill()
+        setActiveSkill(nextSkill)
+        console.log('Switched to next skill:', nextSkill)
+      } else {
+        // Non-interactive mode: Move windows down
+        moveActiveWindow('down')
+      }
     }
   })
 
@@ -847,6 +865,21 @@ app.whenReady().then(() => {
       llmResponseWindow.show()
       llmResponseWindow.focus()
       addToSessionMemory('LLM response window focused')
+    }
+  })
+
+  // Add keyboard shortcuts to move windows left/right
+  globalShortcut.register('CommandOrControl+Left', () => {
+    if (!isWindowHidden && !isWindowInteractive) {
+      // Non-interactive mode: Move windows left
+      moveActiveWindow('left')
+    }
+  })
+
+  globalShortcut.register('CommandOrControl+Right', () => {
+    if (!isWindowHidden && !isWindowInteractive) {
+      // Non-interactive mode: Move windows right
+      moveActiveWindow('right')
     }
   })
 
@@ -1853,7 +1886,7 @@ function createLLMResponseWindow() {
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
-    movable: false,
+    movable: true,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -1865,6 +1898,10 @@ function createLLMResponseWindow() {
     title: 'WindowServer',
     icon: path.join(__dirname, 'icon.png')
   })
+
+  // Set window to be visible on all workspaces and follow desktop changes
+  llmResponseWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
 
   // Load the LLM response HTML file
   llmResponseWindow.loadFile('llm-response.html')
@@ -1929,6 +1966,45 @@ function setActiveSkill(skill) {
   console.log(`Active skill changed from ${oldSkill} to ${skill}`)
 }
 
+function moveActiveWindow(direction) {
+  const moveDistance = 20;
+  let windowsToMove = [];
+  
+  // Always move main window and LLM response window together
+  if (mainWindow) {
+    windowsToMove.push(mainWindow);
+  }
+  if (llmResponseWindow && llmResponseWindow.isVisible()) {
+    windowsToMove.push(llmResponseWindow);
+  }
+  
+  windowsToMove.forEach(window => {
+    const bounds = window.getBounds();
+    let newX = bounds.x;
+    let newY = bounds.y;
+    
+    switch (direction) {
+      case 'up':
+        newY = bounds.y - moveDistance;
+        break;
+      case 'down':
+        newY = bounds.y + moveDistance;
+        break;
+      case 'left':
+        newX = bounds.x - moveDistance;
+        break;
+      case 'right':
+        newX = bounds.x + moveDistance;
+        break;
+    }
+    
+    window.setPosition(newX, newY);
+  });
+  
+  console.log(`Moved windows ${direction} by ${moveDistance}px`);
+  addToSessionMemory('Windows moved', { direction: direction, distance: moveDistance });
+}
+
 function showLLMResponseWindowWithLoading() {
   // Create and show LLM response window if it doesn't exist
   if (!llmResponseWindow) {
@@ -1942,6 +2018,18 @@ function showLLMResponseWindowWithLoading() {
     }
     llmResponseWindow.focus()
     activeWindow = 'llm-response'
+    
+    // Set initial interaction state to match global state
+    llmResponseWindow.setIgnoreMouseEvents(!isWindowInteractive, { forward: true })
+    llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+    llmResponseWindow.setVisibleOnAllWorkspaces(true)
+    
+    // Send current interaction state
+    if (isWindowInteractive) {
+      llmResponseWindow.webContents.send('interaction-enabled')
+    } else {
+      llmResponseWindow.webContents.send('interaction-disabled')
+    }
     
     // Ensure proper positioning
     const mainBounds = mainWindow.getBounds()
