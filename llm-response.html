@@ -35,19 +35,19 @@
         .markdown-content ul, .markdown-content ol { margin-bottom: 1rem; padding-left: 1.5rem; }
         .markdown-content li { margin-bottom: 0.5rem; color: white; }
         .markdown-content code { 
-            background-color: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(20, 20, 20, 0.5) 100%); 
+            background-color: rgba(0, 0, 0, 0.4); 
             padding: 0.2rem 0.4rem; 
             border-radius: 0.25rem; 
             font-family: 'Courier New', monospace;
             color: #e5e7eb;
         }
         .markdown-content pre { 
-            background-color: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(20, 20, 20, 0.5) 100%); 
+            background-color: rgba(0, 0, 0, 0.4); 
             padding: 1rem; 
             border-radius: 0.5rem; 
             margin: 1rem 0;
             overflow-x: auto;
-            border: 1px solid linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(20, 20, 20, 0.5) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
         .markdown-content pre code { 
             background-color: transparent; 
@@ -285,27 +285,47 @@
         console.log('ipcRenderer available:', typeof ipcRenderer !== 'undefined');
         
         // Set up event listeners using direct ipcRenderer
+        ipcRenderer.on('show-loading', (event) => {
+            console.log('Showing loading state');
+            showLoadingState();
+        });
+
         ipcRenderer.on('display-llm-response', (event, data) => {
             console.log('LLM Response window received data:', data);
             console.log('Response length:', data.response ? data.response.length : 0);
             console.log('Skill:', data.skill);
+            console.log('Window size:', window.innerWidth, 'x', window.innerHeight);
+            hideLoadingState();
             displayResponse(data);
         });
+
+        function showLoadingState() {
+            const loadingElement = document.getElementById('loading');
+            const responseElement = document.getElementById('response-content');
+            
+            if (loadingElement) {
+                loadingElement.classList.remove('hidden');
+            }
+            
+            if (responseElement) {
+                responseElement.classList.add('hidden');
+            }
+        }
+
+        function hideLoadingState() {
+            const loadingElement = document.getElementById('loading');
+            if (loadingElement) {
+                loadingElement.classList.add('hidden');
+            }
+        }
 
         function displayResponse(data) {
             console.log('displayResponse called with data:', data);
             
-            // Hide loading, show content
-            const loadingElement = document.getElementById('loading');
+            // Show content
             const responseElement = document.getElementById('response-content');
             
-            console.log('Loading element:', loadingElement);
             console.log('Response element:', responseElement);
-            
-            if (loadingElement) {
-                loadingElement.classList.add('hidden');
-                console.log('Loading hidden');
-            }
             
             if (responseElement) {
                 responseElement.classList.remove('hidden');

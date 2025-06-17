@@ -38,6 +38,10 @@ let sessionMemory = [] // Array to store session events
 async function takeScreenshotAndOCR() {
   try {
     console.log('Taking screenshot...')
+    addToSessionMemory('Screenshot initiated')
+    
+    // Show LLM response window with loading state immediately
+    showLLMResponseWindowWithLoading()
     
     // Get screen sources
     const sources = await desktopCapturer.getSources({ 
@@ -52,15 +56,96 @@ async function takeScreenshotAndOCR() {
     const source = sources[0]
     console.log('Screen source found:', source.name)
     
-    // Create a temporary file path
-    const tempPath = path.join(os.tmpdir(), `screenshot-${Date.now()}.png`)
-    console.log('Temporary file path:', tempPath)
-    
-    // Save the thumbnail directly
+    // Get the thumbnail image
     const image = source.thumbnail
     if (!image) {
       throw new Error('No thumbnail available')
     }
+    
+    console.log('Screenshot captured, processing OCR...')
+    addToSessionMemory('Screenshot captured', { 
+      source: source.name,
+      size: image.getSize()
+    })
+    
+    // Process OCR
+    const text = await performOCR(image)
+    
+    if (text && text.trim()) {
+      console.log('OCR completed, processing with LLM...')
+      addToSessionMemory('OCR completed', { 
+        textLength: text.length,
+        preview: text.substring(0, 100) + '...'
+      })
+      
+      // Get current active skill from session memory
+      const sessionContext = getLLMOptimizedSessionHistory()
+      const currentActiveSkill = activeSkill // Use the global active skill variable
+      
+      // Process OCR text with LLM
+      await processOCRWithLLM(text.trim(), currentActiveSkill)
+      
+      // Send to all windows
+      if (mainWindow) {
+        mainWindow.webContents.send('ocr-completed', { text: text })
+      }
+      if (chatWindow) {
+        chatWindow.webContents.send('ocr-completed', { text: text })
+      }
+      if (skillsWindow) {
+        skillsWindow.webContents.send('ocr-completed', { text: text })
+      }
+      
+    } else {
+      console.log('No text found in screenshot')
+      addToSessionMemory('OCR failed - no text found')
+      
+      // Hide LLM response window if no text found
+      if (llmResponseWindow) {
+        llmResponseWindow.hide()
+      }
+      
+      // Send error to windows
+      const errorData = { error: 'No text found in screenshot' }
+      if (mainWindow) {
+        mainWindow.webContents.send('ocr-error', errorData)
+      }
+      if (chatWindow) {
+        chatWindow.webContents.send('ocr-error', errorData)
+      }
+      if (skillsWindow) {
+        skillsWindow.webContents.send('ocr-error', errorData)
+      }
+    }
+    
+  } catch (error) {
+    console.error('Screenshot/OCR error:', error)
+    addToSessionMemory('Screenshot/OCR failed', { error: error.message })
+    
+    // Hide LLM response window on error
+    if (llmResponseWindow) {
+      llmResponseWindow.hide()
+    }
+    
+    // Send error to windows
+    const errorData = { error: error.message }
+    if (mainWindow) {
+      mainWindow.webContents.send('ocr-error', errorData)
+    }
+    if (chatWindow) {
+      chatWindow.webContents.send('ocr-error', errorData)
+    }
+    if (skillsWindow) {
+      skillsWindow.webContents.send('ocr-error', errorData)
+    }
+  }
+}
+
+async function performOCR(image) {
+  try {
+    // Create a temporary file path
+    const tempPath = path.join(os.tmpdir(), `screenshot-${Date.now()}.png`)
+    console.log('Temporary file path:', tempPath)
     
     // Convert NativeImage to buffer and save
     const buffer = image.toPNG()
@@ -85,28 +170,7 @@ async function takeScreenshotAndOCR() {
         console.error('Error deleting screenshot file:', deleteError)
       }
       
-      // Add to session memory without file path
-      addToSessionMemory('Screenshot taken and OCR completed', {
-        ocrText: text.trim()
-      })
-      
-      // Get current active skill from session memory
-      const sessionContext = getLLMOptimizedSessionHistory()
-      const currentActiveSkill = activeSkill // Use the global active skill variable
-      
-      // Process OCR text with LLM
-      await processOCRWithLLM(text.trim(), currentActiveSkill)
-      
-      // Send to all windows
-      if (mainWindow) {
-        mainWindow.webContents.send('ocr-completed', { text: text.trim() })
-      }
-      if (chatWindow) {
-        chatWindow.webContents.send('ocr-completed', { text: text.trim() })
-      }
-      if (skillsWindow) {
-        skillsWindow.webContents.send('ocr-completed', { text: text.trim() })
-      }
+      return text.trim()
       
     } catch (ocrError) {
       // Delete the temporary file even if OCR fails
@@ -117,41 +181,12 @@ async function takeScreenshotAndOCR() {
         console.error('Error deleting screenshot file after OCR error:', deleteError)
       }
       
-      console.error('OCR error:', ocrError)
-      addToSessionMemory('Screenshot taken and OCR completed', {
-        error: ocrError.message,
-        ocrText: 'OCR processing failed'
-      })
-      
-      // Send error to windows
-      if (mainWindow) {
-        mainWindow.webContents.send('ocr-error', { error: ocrError.message })
-      }
-      if (chatWindow) {
-        chatWindow.webContents.send('ocr-error', { error: ocrError.message })
-      }
-      if (skillsWindow) {
-        skillsWindow.webContents.send('ocr-error', { error: ocrError.message })
-      }
+      throw ocrError
     }
     
   } catch (error) {
-    console.error('Screenshot error:', error)
-    addToSessionMemory('Screenshot taken and OCR completed', {
-      error: error.message,
-      ocrText: 'Screenshot capture failed'
-    })
-    
-    // Send error to windows
-    if (mainWindow) {
-      mainWindow.webContents.send('ocr-error', { error: error.message })
-    }
-    if (chatWindow) {
-      chatWindow.webContents.send('ocr-error', { error: error.message })
-    }
-    if (skillsWindow) {
-      skillsWindow.webContents.send('ocr-error', { error: error.message })
-    }
+    console.error('OCR processing error:', error)
+    throw error
   }
 }
 
@@ -656,7 +691,8 @@ app.whenReady().then(() => {
         if (targetWindow === mainWindow && llmResponseWindow) {
           const mainBounds = mainWindow.getBounds()
           const screenSize = screen.getPrimaryDisplay().workAreaSize
-          const llmHeight = Math.floor(screenSize.height * 0.4)
+          const windowWidth = Math.max(mainBounds.width, 800)
+          const windowHeight = Math.floor(screenSize.height * 0.6)
           llmResponseWindow.setPosition(mainBounds.x, mainBounds.y + mainBounds.height + 5)
         }
       }
@@ -684,7 +720,8 @@ app.whenReady().then(() => {
         if (targetWindow === mainWindow && llmResponseWindow) {
           const mainBounds = mainWindow.getBounds()
           const screenSize = screen.getPrimaryDisplay().workAreaSize
-          const llmHeight = Math.floor(screenSize.height * 0.4)
+          const windowWidth = Math.max(mainBounds.width, 800)
+          const windowHeight = Math.floor(screenSize.height * 0.6)
           llmResponseWindow.setPosition(mainBounds.x, mainBounds.y + mainBounds.height + 5)
         }
       }
@@ -1310,31 +1347,7 @@ async function processOCRWithLLM(ocrText, activeSkill = null) {
       })
     }
     
-    // Create and show LLM response window
-    if (!llmResponseWindow) {
-      createLLMResponseWindow()
-    }
-    
-    // Ensure window is shown and focused
-    if (llmResponseWindow) {
-      if (!llmResponseWindow.isVisible()) {
-        llmResponseWindow.show()
-      }
-      llmResponseWindow.focus()
-      activeWindow = 'llm-response'
-      
-      // Ensure proper positioning
-      const mainBounds = mainWindow.getBounds()
-      const screenSize = screen.getPrimaryDisplay().workAreaSize
-      const windowWidth = mainBounds.width
-      const windowHeight = Math.floor(screenSize.height * 0.4)
-      const windowX = mainBounds.x
-      const windowY = mainBounds.y + mainBounds.height + 5
-      
-      llmResponseWindow.setBounds(windowX, windowY, windowWidth, windowHeight)
-    }
-    
-    // Wait for window to be ready, then send data
+    // Send data to LLM response window (window is already created with loading state)
     setTimeout(() => {
       if (llmResponseWindow && !llmResponseWindow.isDestroyed()) {
         console.log('Sending LLM response data to window:', { 
@@ -1814,11 +1827,11 @@ function createLLMResponseWindow() {
   const mainBounds = mainWindow.getBounds()
   const screenSize = screen.getPrimaryDisplay().workAreaSize
   
-  // Position below main window with same width as main tab
-  const windowWidth = mainBounds.width
-  const windowHeight = Math.floor(screenSize.height * 0.4) // 40% of screen height
+  // Position below main window with larger size
+  const windowWidth = Math.max(mainBounds.width, 800)
+  const windowHeight = Math.floor(screenSize.height * 0.6)
   const windowX = mainBounds.x
-  const windowY = mainBounds.y + mainBounds.height + 5 // 5px gap below main window
+  const windowY = mainBounds.y + mainBounds.height + 5
   
   llmResponseWindow = new BrowserWindow({
     width: windowWidth,
@@ -1904,4 +1917,33 @@ function setActiveSkill(skill) {
   }
   
   console.log(`Active skill changed from ${oldSkill} to ${skill}`)
+}
+
+function showLLMResponseWindowWithLoading() {
+  // Create and show LLM response window if it doesn't exist
+  if (!llmResponseWindow) {
+    createLLMResponseWindow()
+  }
+  
+  // Ensure window is shown and focused
+  if (llmResponseWindow) {
+    if (!llmResponseWindow.isVisible()) {
+      llmResponseWindow.show()
+    }
+    llmResponseWindow.focus()
+    activeWindow = 'llm-response'
+    
+    // Ensure proper positioning
+    const mainBounds = mainWindow.getBounds()
+    const screenSize = screen.getPrimaryDisplay().workAreaSize
+    const windowWidth = Math.max(mainBounds.width, 800)
+    const windowHeight = Math.floor(screenSize.height * 0.6)
+    const windowX = mainBounds.x
+    const windowY = mainBounds.y + mainBounds.height + 5
+    
+    llmResponseWindow.setBounds(windowX, windowY, windowWidth, windowHeight)
+    
+    // Send loading state to window
+    llmResponseWindow.webContents.send('show-loading')
+  }
 }
