@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   disableWindowInteraction: () => ipcRenderer.invoke('disable-window-interaction'),
   switchToChat: () => ipcRenderer.invoke('switch-to-chat'),
   switchToSkills: () => ipcRenderer.invoke('switch-to-skills'),
+  resizeWindow: (width, height) => ipcRenderer.invoke('resize-window', { width, height }),
   
   // Session memory
   getSessionHistory: () => ipcRenderer.invoke('get-session-history'),
@@ -29,6 +30,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getGeminiStatus: () => ipcRenderer.invoke('get-gemini-status'),
   testGeminiConnection: () => ipcRenderer.invoke('test-gemini-connection'),
   
+  // Settings
+  showSettings: () => ipcRenderer.invoke('show-settings'),
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
+  updateAppIcon: (iconKey) => ipcRenderer.invoke('update-app-icon', iconKey),
+  updateActiveSkill: (skill) => ipcRenderer.invoke('update-active-skill', skill),
+  restartAppForStealth: () => ipcRenderer.invoke('restart-app-for-stealth'),
+  closeWindow: () => ipcRenderer.invoke('close-window'),
+  
   // Event listeners
   onTranscriptionReceived: (callback) => ipcRenderer.on('transcription-received', callback),
   onSessionEvent: (callback) => ipcRenderer.on('session-event', callback),
@@ -40,6 +50,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onOpenGeminiConfig: (callback) => ipcRenderer.on('open-gemini-config', callback),
   onDisplayLlmResponse: (callback) => ipcRenderer.on('display-llm-response', callback),
   onSkillChanged: (callback) => ipcRenderer.on('skill-changed', callback),
+  onInteractionModeChanged: (callback) => ipcRenderer.on('set-interactive', callback),
   
   // Remove listeners
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel)

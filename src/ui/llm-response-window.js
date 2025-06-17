@@ -52,8 +52,18 @@ class LLMResponseWindowUI {
         const { ipcRenderer } = require('electron');
         
         // Core event handlers
-        ipcRenderer.on('show-loading', () => this.showLoadingState());
-        ipcRenderer.on('display-llm-response', (event, data) => this.handleDisplayResponse(data));
+        ipcRenderer.on('show-loading', () => {
+            logger.debug('show-loading event received', { component: 'LLMResponseWindowUI' });
+            this.showLoadingState();
+        });
+        ipcRenderer.on('display-llm-response', (event, data) => {
+            logger.debug('display-llm-response event received', { 
+                component: 'LLMResponseWindowUI',
+                hasData: !!data,
+                dataKeys: data ? Object.keys(data) : []
+            });
+            this.handleDisplayResponse(data);
+        });
         
         // Interaction state handlers
         ipcRenderer.on('interaction-enabled', () => this.handleInteractionEnabled());
@@ -64,6 +74,8 @@ class LLMResponseWindowUI {
         
         // Keyboard event handlers
         this.setupKeyboardHandlers();
+        
+        logger.debug('Event listeners setup complete', { component: 'LLMResponseWindowUI' });
     }
 
     setupWindowEventHandlers() {
@@ -101,21 +113,25 @@ class LLMResponseWindowUI {
         try {
             logger.info('LLM Response received', {
                 component: 'LLMResponseWindowUI',
-                responseLength: data.response ? data.response.length : 0,
-                skill: data.skill,
-                windowSize: `${window.innerWidth}x${window.innerHeight}`
+                responseLength: data.content ? data.content.length : 0,
+                skill: data.metadata?.skill,
+                windowSize: `${window.innerWidth}x${window.innerHeight}`,
+                dataKeys: Object.keys(data)
             });
             
             // Check if window needs expansion
             if (window.innerWidth < 500 || window.innerHeight < 300) {
+                logger.debug('Window needs expansion, calling handleWindowExpansion');
                 this.handleWindowExpansion(data);
             } else {
+                logger.debug('Window size OK, calling displayResponseContent directly');
                 this.displayResponseContent(data);
             }
         } catch (error) {
             logger.error('Failed to handle display response', {
                 component: 'LLMResponseWindowUI',
-                error: error.message
+                error: error.message,
+                stack: error.stack
             });
         }
     }
@@ -126,7 +142,8 @@ class LLMResponseWindowUI {
                 component: 'LLMResponseWindowUI'
             });
             
-            const response = data.response;
+            // Check both content and response properties for compatibility
+            const response = data.content || data.response;
             if (response) {
                 const codeBlocks = this.extractCodeBlocks(response);
                 const contentMetrics = this.calculateContentMetrics(response, codeBlocks);
@@ -144,6 +161,7 @@ class LLMResponseWindowUI {
                     result
                 });
                 
+                logger.debug('About to call displayResponseContent after expansion timeout');
                 setTimeout(() => {
                     this.displayResponseContent(data);
                 }, 200);
@@ -167,12 +185,24 @@ class LLMResponseWindowUI {
 
     displayResponseContent(data) {
         try {
+            logger.debug('displayResponseContent called', {
+                component: 'LLMResponseWindowUI',
+                dataKeys: Object.keys(data),
+                hasContent: !!data.content,
+                hasResponse: !!data.response
+            });
+
             this.hideLoadingState();
             this.showResponseContent();
             
-            const response = data.response;
+            // Check both content and response properties for compatibility
+            const response = data.content || data.response;
             if (!response) {
-                logger.error('No response data received', { component: 'LLMResponseWindowUI' });
+                logger.error('No response data received', { 
+                    component: 'LLMResponseWindowUI',
+                    dataKeys: Object.keys(data),
+                    dataContent: data
+                });
                 return;
             }
             
@@ -320,6 +350,9 @@ class LLMResponseWindowUI {
     hideLoadingState() {
         if (this.elements.loading) {
             this.elements.loading.classList.add('hidden');
+            logger.debug('Loading element hidden with "hidden" class', { component: 'LLMResponseWindowUI' });
+        } else {
+            logger.warn('Loading element not found!', { component: 'LLMResponseWindowUI' });
         }
         
         logger.debug('Loading state hidden', { component: 'LLMResponseWindowUI' });
@@ -328,6 +361,9 @@ class LLMResponseWindowUI {
     showResponseContent() {
         if (this.elements.responseContent) {
             this.elements.responseContent.classList.remove('hidden');
+            logger.debug('Response content element shown (hidden class removed)', { component: 'LLMResponseWindowUI' });
+        } else {
+            logger.warn('Response content element not found!', { component: 'LLMResponseWindowUI' });
         }
         
         logger.debug('Response content shown', { component: 'LLMResponseWindowUI' });

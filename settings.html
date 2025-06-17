@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: transparent;
+            color: #e0e0e0;
+            font-size: 13px;
+            line-height: 1.4;
+            overflow: hidden;
+        }
+
+        .settings-container {
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(20, 20, 20, 0.5) 100%);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 16px;
+            max-width: 380px;
+            margin: 0;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+        }
+
+        .settings-section {
+            margin-bottom: 16px;
+        }
+
+        .section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.9);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .select-group {
+            margin-bottom: 0;
+        }
+
+        .select-field {
+            width: 100%;
+            padding: 6px 8px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+            color: #ffffff;
+            font-size: 12px;
+            outline: none;
+            transition: all 0.2s ease;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+            appearance: none;
+            background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="rgba(255,255,255,0.6)"><path d="M6 9L1 4h10z"/></svg>');
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            background-size: 10px;
+            padding-right: 28px;
+        }
+
+        .select-field:focus {
+            border-color: rgba(100, 100, 100, 0.8);
+            background: rgba(255, 255, 255, 0.12);
+        }
+
+        .select-field option {
+            background: #1a1a1a;
+            color: #ffffff;
+            padding: 4px;
+        }
+
+        .icon-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .icon-option {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            position: relative;
+            padding: 8px 4px;
+            height: 60px;
+        }
+
+        .icon-option:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .icon-option.selected {
+            border-color: rgba(100, 100, 100, 0.8);
+            background: rgba(100, 100, 100, 0.15);
+        }
+
+        .icon-option.selected::after {
+            content: '●';
+            position: absolute;
+            top: 2px;
+            right: 4px;
+            color: rgba(100, 100, 100, 0.9);
+            font-size: 8px;
+        }
+
+        .icon-option img {
+            width: 24px !important;
+            height: 24px !important;
+            object-fit: contain !important;
+            border-radius: 3px !important;
+            margin-bottom: 2px !important;
+        }
+
+        .icon-option div {
+            font-size: 9px !important;
+            color: rgba(255, 255, 255, 0.7) !important;
+            text-align: center !important;
+            line-height: 1.2 !important;
+            margin-top: 2px !important;
+        }
+
+        .action-buttons {
+            display: flex;
+            justify-content: center;
+            margin-top: 16px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .btn {
+            padding: 6px 16px;
+            border: none;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 70px;
+            background: rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+        }
+
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-1px);
+        }
+
+        .current-selection {
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.5);
+            margin-top: 3px;
+            font-style: italic;
+        }
+
+        /* Stealth scrollbar */
+        ::-webkit-scrollbar {
+            width: 2px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 1px;
+        }
+
+        /* Feedback notification styling */
+        #tempFeedback {
+            font-size: 10px !important;
+            padding: 6px 10px !important;
+            background: rgba(0, 0, 0, 0.8) !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            backdrop-filter: blur(5px) !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="settings-container">
+        <!-- Coding Language Section -->
+        <div class="settings-section">
+            <div class="section-title">Language</div>
+            <div class="select-group">
+                <select class="select-field" id="codingLanguage">
+                    <option value="javascript">JavaScript</option>
+                    <option value="python">Python</option>
+                    <option value="java">Java</option>
+                    <option value="cpp">C++</option>
+                    <option value="c">C</option>
+                    <option value="csharp">C#</option>
+                    <option value="go">Go</option>
+                    <option value="rust">Rust</option>
+                    <option value="php">PHP</option>
+                    <option value="ruby">Ruby</option>
+                    <option value="swift">Swift</option>
+                    <option value="kotlin">Kotlin</option>
+                    <option value="typescript">TypeScript</option>
+                    <option value="dart">Dart</option>
+                    <option value="scala">Scala</option>
+                    <option value="r">R</option>
+                    <option value="matlab">MATLAB</option>
+                    <option value="shell">Shell/Bash</option>
+                    <option value="sql">SQL</option>
+                    <option value="html">HTML</option>
+                    <option value="css">CSS</option>
+                </select>
+                <div class="current-selection" id="currentLanguage">JavaScript</div>
+            </div>
+        </div>
+
+        <!-- Skills Section -->
+        <div class="settings-section">
+            <div class="section-title">Focus</div>
+            <div class="select-group">
+                <select class="select-field" id="activeSkill">
+                    <option value="programming">Programming</option>
+                    <option value="dsa" selected>Data Structures & Algorithms</option>
+                    <option value="system-design">System Design</option>
+                    <option value="behavioral">Behavioral Interview</option>
+                    <option value="data-science">Data Science</option>
+                    <option value="sales">Sales & Business</option>
+                    <option value="presentation">Presentation Skills</option>
+                    <option value="negotiation">Negotiation</option>
+                    <option value="devops">DevOps & Infrastructure</option>
+                </select>
+                <div class="current-selection" id="currentSkill">Data Structures & Algorithms</div>
+            </div>
+        </div>
+
+        <!-- App Icon Section -->
+        <div class="settings-section">
+            <div class="select-group">
+                <div class="icon-grid" id="iconGrid">
+                    <!-- Icons will be populated by JavaScript -->
+                </div>
+                <div class="current-selection" id="currentIcon">Terminal</div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+            <button class="btn" id="cancelBtn">Close</button>
+            <button class="btn" id="saveBtn" style="display: none;">Save Settings</button>
+        </div>
+    </div>
+
+    <script src="./src/ui/settings-window.js"></script>
+</body>
+</html> 

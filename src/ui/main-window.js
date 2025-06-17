@@ -1,4 +1,10 @@
-const logger = require('../core/logger');
+// Simple logger for renderer process
+const logger = {
+    info: (...args) => console.log('[MainWindowUI]', ...args),
+    debug: (...args) => console.log('[MainWindowUI DEBUG]', ...args),
+    error: (...args) => console.error('[MainWindowUI ERROR]', ...args),
+    warn: (...args) => console.warn('[MainWindowUI WARN]', ...args)
+};
 
 class MainWindowUI {
     constructor() {
@@ -16,6 +22,7 @@ class MainWindowUI {
             this.setupElements();
             this.setupEventListeners();
             this.updateSkillIndicator();
+            this.resizeWindowToContent();
             
             logger.info('Main window UI initialized', {
                 component: 'MainWindowUI',
@@ -29,76 +36,90 @@ class MainWindowUI {
         }
     }
 
+    resizeWindowToContent() {
+        // Wait for DOM to fully render
+        setTimeout(() => {
+            const commandTab = document.querySelector('.command-tab');
+            if (commandTab && window.electronAPI && window.electronAPI.resizeWindow) {
+                const rect = commandTab.getBoundingClientRect();
+                const width = Math.ceil(rect.width);
+                const height = Math.ceil(rect.height);
+                
+                logger.debug('Resizing window to content', {
+                    width,
+                    height,
+                    component: 'MainWindowUI'
+                });
+                
+                window.electronAPI.resizeWindow(width, height);
+            }
+        }, 100);
+    }
+
     setupElements() {
         this.statusDot = document.getElementById('statusDot');
         this.skillIndicator = document.getElementById('skillIndicator');
+        this.settingsIndicator = document.getElementById('settingsIndicator');
         
-        if (!this.statusDot || !this.skillIndicator) {
+        if (!this.statusDot || !this.skillIndicator || !this.settingsIndicator) {
             throw new Error('Required UI elements not found');
         }
+
+        // Add click handler for settings
+        this.settingsIndicator.addEventListener('click', () => {
+            console.log('Settings clicked!');
+            this.openSettings();
+        });
+        
+        console.log('Settings click handler attached to:', this.settingsIndicator);
     }
 
     setupEventListeners() {
-        const { ipcRenderer } = require('electron');
+        // Set up event listeners using electronAPI from preload
+        if (window.electronAPI) {
+            // Skill change handlers
+            window.electronAPI.onSkillChanged((event, data) => this.handleSkillChanged(data));
+            
+            // LLM handlers
+            window.electronAPI.onLlmResponse((event, data) => this.handleLLMResponse(data));
+            window.electronAPI.onLlmError((event, data) => this.handleLLMError(data));
+        }
         
-        // Interaction state handlers
-        ipcRenderer.on('interaction-enabled', () => this.handleInteractionEnabled());
-        ipcRenderer.on('interaction-disabled', () => this.handleInteractionDisabled());
+        // IPC event listeners
+        window.addEventListener('message', (event) => {
+            if (event.data.type === 'set-interactive') {
+                this.handleInteractionModeChanged(event.data.interactive);
+            }
+        });
         
-        // Skill change handlers
-        ipcRenderer.on('skill-changed', (event, data) => this.handleSkillChanged(data));
-        ipcRenderer.on('skill-activated', (event, skillName) => this.handleSkillActivated(skillName));
-        
-        // Screenshot and recording handlers
-        ipcRenderer.on('take-screenshot', () => this.handleScreenshotRequest());
-        ipcRenderer.on('recording-started', () => this.handleRecordingStarted());
-        ipcRenderer.on('recording-stopped', () => this.handleRecordingStopped());
-        
-        // Session and LLM handlers
-        this.setupSessionHandlers(ipcRenderer);
-        this.setupLLMHandlers(ipcRenderer);
-        this.setupGeminiHandlers(ipcRenderer);
+        // Use the electron IPC directly for the 'set-interactive' event
+        if (window.electronAPI && window.electronAPI.onInteractionModeChanged) {
+            window.electronAPI.onInteractionModeChanged((event, interactive) => {
+                this.handleInteractionModeChanged(interactive);
+            });
+        }
         
         // Keyboard shortcuts
         this.setupKeyboardShortcuts();
+        
+        // Settings shortcut
+        this.setupSettingsShortcut();
     }
 
-    setupSessionHandlers(ipcRenderer) {
-        window.electronAPI.onSessionEvent((event, sessionEvent) => {
-            logger.debug('Session event received', {
-                component: 'MainWindowUI',
-                event: sessionEvent
-            });
+    handleLLMResponse(data) {
+        logger.info('LLM response received', {
+            component: 'MainWindowUI',
+            skill: data.skill || 'General'
         });
-
-        window.electronAPI.onSessionCleared(() => {
-            logger.info('Session memory cleared', { component: 'MainWindowUI' });
-        });
+        this.showNotification(`LLM Analysis Complete - ${data.skill || 'General'}`, 'success');
     }
 
-    setupLLMHandlers(ipcRenderer) {
-        window.electronAPI.onLlmResponse((event, data) => {
-            logger.info('LLM response received', {
-                component: 'MainWindowUI',
-                skill: data.skill || 'General'
-            });
-            this.showNotification(`LLM Analysis Complete - ${data.skill || 'General'}`, 'success');
-            this.showNotification('LLM response displayed in new window', 'info');
+    handleLLMError(data) {
+        logger.error('LLM error received', {
+            component: 'MainWindowUI',
+            error: data.error
         });
-
-        window.electronAPI.onLlmError((event, data) => {
-            logger.error('LLM error received', {
-                component: 'MainWindowUI',
-                error: data.error
-            });
-            this.showNotification(`LLM Error: ${data.error}`, 'error');
-        });
-    }
-
-    setupGeminiHandlers(ipcRenderer) {
-        window.electronAPI.onOpenGeminiConfig(() => {
-            this.showGeminiConfig();
-        });
+        this.showNotification(`LLM Error: ${data.error}`, 'error');
     }
 
     setupKeyboardShortcuts() {
@@ -110,9 +131,8 @@ class MainWindowUI {
                 }
             }
             
-            if (e.altKey && e.key === 'A') {
-                this.toggleInteractiveMode();
-            }
+            // Alt+A is handled globally by the main process
+            // No need to handle it here since it needs to work even when windows are non-interactive
         });
     }
 
@@ -130,6 +150,21 @@ class MainWindowUI {
         this.skillIndicator.classList.add('non-interactive');
         
         logger.debug('Interaction mode disabled', { component: 'MainWindowUI' });
+    }
+
+    handleInteractionModeChanged(interactive) {
+        this.isInteractive = interactive;
+        
+        if (interactive) {
+            this.handleInteractionEnabled();
+        } else {
+            this.handleInteractionDisabled();
+        }
+        
+        logger.info('Interaction mode changed via IPC', {
+            component: 'MainWindowUI',
+            interactive
+        });
     }
 
     handleSkillChanged(data) {
@@ -363,12 +398,57 @@ class MainWindowUI {
             });
         }
     }
+
+    setupSettingsShortcut() {
+        document.addEventListener('keydown', (e) => {
+            // Cmd+, or Ctrl+, for settings
+            if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+                console.log('Settings keyboard shortcut pressed!');
+                e.preventDefault();
+                this.openSettings();
+            }
+        });
+        console.log('Settings keyboard shortcut handler attached');
+    }
+
+    openSettings() {
+        console.log('openSettings called');
+        try {
+            console.log('window.electronAPI:', window.electronAPI);
+            if (window.electronAPI && window.electronAPI.showSettings) {
+                window.electronAPI.showSettings();
+                console.log('showSettings called successfully');
+            } else {
+                console.error('electronAPI or showSettings not available');
+                return;
+            }
+            
+            // Add visual feedback
+            this.settingsIndicator.style.transform = 'scale(1.1)';
+            this.settingsIndicator.style.transition = 'transform 0.2s ease';
+            
+            setTimeout(() => {
+                this.settingsIndicator.style.transform = 'scale(1)';
+            }, 200);
+            
+            logger.info('Settings window opened', { component: 'MainWindowUI' });
+        } catch (error) {
+            console.error('Error opening settings:', error);
+            logger.error('Failed to open settings', {
+                component: 'MainWindowUI',
+                error: error.message
+            });
+            this.showNotification('Failed to open settings', 'error');
+        }
+    }
 }
 
 // Initialize when DOM is ready
 let mainWindowUI;
-document.addEventListener('DOMContentLoaded', () => {
-    mainWindowUI = new MainWindowUI();
-});
+if (typeof document !== 'undefined') {
+    document.addEventListener('DOMContentLoaded', () => {
+        mainWindowUI = new MainWindowUI();
+    });
+}
 
 module.exports = MainWindowUI; 

@@ -17,6 +17,16 @@ class ApplicationController {
   constructor() {
     this.isReady = false;
     this.activeSkill = 'dsa';
+    
+    // Window configurations for reference
+    this.windowConfigs = {
+      main: { title: 'Wysper' },
+      chat: { title: 'Chat' },
+      skills: { title: 'Skills' },
+      llmResponse: { title: 'AI Response' },
+      settings: { title: 'Settings' }
+    };
+    
     this.setupStealth();
     this.setupEventHandlers();
   }
@@ -25,6 +35,10 @@ class ApplicationController {
     if (config.get('stealth.disguiseProcess')) {
       process.title = config.get('app.processTitle');
     }
+    
+    // Set default stealth app name early
+    app.setName('Terminal '); // Default to Terminal stealth mode
+    process.title = 'Terminal ';
     
     if (process.platform === 'darwin' && config.get('stealth.noAttachConsole')) {
       process.env.ELECTRON_NO_ATTACH_CONSOLE = '1';
@@ -43,6 +57,10 @@ class ApplicationController {
   }
 
   async onAppReady() {
+    // Force stealth mode IMMEDIATELY when app is ready
+    app.setName('Terminal ');
+    process.title = 'Terminal ';
+    
     logger.info('Application starting', {
       version: config.get('app.version'),
       environment: config.get('app.isDevelopment') ? 'development' : 'production',
@@ -53,6 +71,9 @@ class ApplicationController {
       this.setupPermissions();
       await windowManager.initializeWindows();
       this.setupGlobalShortcuts();
+      
+      // Initialize default stealth mode with terminal icon
+      this.updateAppIcon('terminal');
       
       this.isReady = true;
       
@@ -83,7 +104,8 @@ class ApplicationController {
       'CommandOrControl+Shift+V': () => windowManager.toggleVisibility(),
       'CommandOrControl+Shift+I': () => windowManager.toggleInteraction(),
       'CommandOrControl+Shift+C': () => windowManager.switchToWindow('chat'),
-      'CommandOrControl+Shift+K': () => windowManager.switchToWindow('skills')
+      'CommandOrControl+Shift+K': () => windowManager.switchToWindow('skills'),
+      'Alt+A': () => windowManager.toggleInteraction()
     };
 
     Object.entries(shortcuts).forEach(([accelerator, handler]) => {
@@ -151,6 +173,15 @@ class ApplicationController {
       return windowManager.getWindowStats();
     });
     
+    ipcMain.handle('resize-window', (event, { width, height }) => {
+      const mainWindow = windowManager.getWindow('main');
+      if (mainWindow) {
+        mainWindow.setSize(width, height);
+        logger.debug('Main window resized', { width, height });
+      }
+      return { success: true };
+    });
+    
     ipcMain.handle('get-session-history', () => {
       return sessionManager.getOptimizedHistory();
     });
@@ -172,6 +203,48 @@ class ApplicationController {
     
     ipcMain.handle('test-gemini-connection', async () => {
       return await llmService.testConnection();
+    });
+
+    // Settings handlers
+    ipcMain.handle('show-settings', () => {
+      windowManager.showSettings();
+      return { success: true };
+    });
+
+    ipcMain.handle('get-settings', () => {
+      return this.getSettings();
+    });
+
+    ipcMain.handle('save-settings', (event, settings) => {
+      return this.saveSettings(settings);
+    });
+
+    ipcMain.handle('update-app-icon', (event, iconKey) => {
+      return this.updateAppIcon(iconKey);
+    });
+
+    ipcMain.handle('update-active-skill', (event, skill) => {
+      this.activeSkill = skill;
+      windowManager.broadcastToAllWindows('skill-changed', { skill });
+      return { success: true };
+    });
+
+    ipcMain.handle('restart-app-for-stealth', () => {
+      // Force restart the app to ensure stealth name changes take effect
+      const { app } = require('electron');
+      app.relaunch();
+      app.exit();
+    });
+
+    ipcMain.handle('close-window', (event) => {
+      const webContents = event.sender;
+      const window = windowManager.windows.forEach((win, type) => {
+        if (win.webContents === webContents) {
+          win.hide();
+          return true;
+        }
+      });
+      return { success: true };
     });
   }
 
@@ -305,6 +378,181 @@ class ApplicationController {
       sessionEvents: sessionStats.eventCount,
       sessionSize: sessionStats.approximateSize
     });
+  }
+
+  getSettings() {
+    return {
+      codingLanguage: this.codingLanguage || 'javascript',
+      activeSkill: this.activeSkill || 'dsa',
+      appIcon: this.appIcon || 'terminal'
+    };
+  }
+
+  saveSettings(settings) {
+    try {
+      // Update application settings
+      if (settings.codingLanguage) {
+        this.codingLanguage = settings.codingLanguage;
+      }
+      if (settings.activeSkill) {
+        this.activeSkill = settings.activeSkill;
+      }
+      if (settings.appIcon) {
+        this.appIcon = settings.appIcon;
+      }
+
+      // Persist settings to file or config
+      this.persistSettings(settings);
+
+      logger.info('Settings saved successfully', settings);
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to save settings', { error: error.message });
+      return { success: false, error: error.message };
+    }
+  }
+
+  persistSettings(settings) {
+    // You can extend this to save to a file or database
+    // For now, we'll just keep them in memory
+    logger.debug('Settings persisted', settings);
+  }
+
+  updateAppIcon(iconKey) {
+    try {
+      const { app } = require('electron');
+      const path = require('path');
+      
+      // Icon mapping for available icons in assests/icons folder
+      const iconPaths = {
+        'terminal': 'assests/icons/terminal.png',
+        'activity': 'assests/icons/activity.png',
+        'settings': 'assests/icons/settings.png'
+      };
+
+      // App name mapping for stealth mode
+      const appNames = {
+        'terminal': 'Terminal ',
+        'activity': 'Activity Monitor ',
+        'settings': 'System Settings '
+      };
+
+      const iconPath = iconPaths[iconKey];
+      const appName = appNames[iconKey];
+      
+      if (iconPath && require('fs').existsSync(iconPath)) {
+        const fullIconPath = path.resolve(iconPath);
+        
+        // Set app icon for dock/taskbar
+        if (process.platform === 'darwin') {
+          // macOS - update dock icon
+          app.dock.setIcon(fullIconPath);
+        } else {
+          // Windows/Linux - update window icons
+          const windows = windowManager.windows;
+          windows.forEach(window => {
+            if (window && !window.isDestroyed()) {
+              window.setIcon(fullIconPath);
+            }
+          });
+        }
+        
+        // Update app name for stealth mode
+        this.updateAppName(appName, iconKey);
+        
+        logger.info('App icon and name updated successfully', { 
+          iconKey, 
+          appName,
+          iconPath: fullIconPath, 
+          platform: process.platform 
+        });
+      } else {
+        logger.warn('Icon file not found', { iconKey, iconPath });
+        return { success: false, error: 'Icon file not found' };
+      }
+
+      this.appIcon = iconKey;
+      return { success: true };
+    } catch (error) {
+      logger.error('Failed to update app icon', { error: error.message });
+      return { success: false, error: error.message };
+    }
+  }
+
+  updateAppName(appName, iconKey) {
+    try {
+      const { app } = require('electron');
+      
+      // Force update process title for Activity Monitor stealth - CRITICAL
+      process.title = appName;
+      
+      // Set app name in dock (macOS) - this affects the dock and Activity Monitor
+      if (process.platform === 'darwin') {
+        // Multiple attempts to ensure the name sticks
+        app.setName(appName);
+        
+        // Force update the bundle name for macOS stealth
+        const { execSync } = require('child_process');
+        try {
+          // Update the app's Info.plist CFBundleName in memory
+          if (process.mainModule && process.mainModule.filename) {
+            const appPath = process.mainModule.filename;
+            // Force set the bundle name directly
+            process.env.CFBundleName = appName.trim();
+          }
+        } catch (e) {
+          // Silently fail if we can't modify bundle info
+        }
+        
+        // Clear dock badge and reset
+        if (app.dock) {
+          app.dock.setBadge('');
+          // Force dock refresh
+          setTimeout(() => {
+            app.dock.setIcon(require('path').resolve(`assests/icons/${iconKey}.png`));
+          }, 50);
+        }
+      }
+      
+      // Set app user model ID for Windows taskbar grouping
+      app.setAppUserModelId(`${appName.trim()}-${iconKey}`);
+      
+      // Update all window titles to match the new app name
+      const windows = windowManager.windows;
+      windows.forEach((window, type) => {
+        if (window && !window.isDestroyed()) {
+          // Use stealth name for all windows
+          const stealthTitle = appName.trim();
+          window.setTitle(stealthTitle);
+        }
+      });
+      
+      // Multiple force refreshes with increasing delays
+      const refreshTimes = [50, 100, 200, 500];
+      refreshTimes.forEach(delay => {
+        setTimeout(() => {
+          process.title = appName;
+          if (process.platform === 'darwin') {
+            app.setName(appName);
+            // Force update bundle display name
+            if (app.getName() !== appName) {
+              app.setName(appName);
+            }
+          }
+        }, delay);
+      });
+      
+      logger.info('App name updated for stealth mode', { 
+        appName, 
+        processTitle: process.title,
+        appGetName: app.getName(),
+        iconKey,
+        platform: process.platform
+      });
+      
+    } catch (error) {
+      logger.error('Failed to update app name', { error: error.message });
+    }
   }
 }
 

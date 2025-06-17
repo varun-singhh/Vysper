@@ -66,7 +66,8 @@ class Logger {
       debug: (message, meta = {}) => this.logger.debug(message, { service: serviceName, ...meta }),
       info: (message, meta = {}) => this.logger.info(message, { service: serviceName, ...meta }),
       warn: (message, meta = {}) => this.logger.warn(message, { service: serviceName, ...meta }),
-      error: (message, meta = {}) => this.logger.error(message, { service: serviceName, ...meta })
+      error: (message, meta = {}) => this.logger.error(message, { service: serviceName, ...meta }),
+      logPerformance: (operation, startTime, metadata = {}) => this.logPerformance(operation, startTime, { service: serviceName, ...metadata })
     };
   }
 
