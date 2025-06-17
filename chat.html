@@ -84,6 +84,10 @@
             border-left: 3px solid #f44336;
             background: rgba(244, 67, 54, 0.1);
         }
+        .message.user {
+            border-left: 3px solid #ff9800;
+            background: rgba(255, 152, 0, 0.1);
+        }
         .message-time {
             color: rgba(255, 255, 255, 0.6);
             font-size: 11px;
@@ -607,25 +611,29 @@
             requestSessionHistory();
         });
         
-        function addMessage(sender, text, type = 'user') {
-            const messagesContainer = document.getElementById('chatMessages')
-            const messageDiv = document.createElement('div')
-            messageDiv.className = `mb-4 p-3 rounded-lg ${
-                type === 'user' ? 'bg-blue-600 ml-auto' : 
-                type === 'assistant' ? 'bg-gray-600' :
-                type === 'ocr' ? 'bg-green-600' :
-                type === 'llm' ? 'bg-purple-600' :
-                type === 'error' ? 'bg-red-600' :
-                'bg-gray-600'
-            } max-w-xs`
+        function addMessage(text, type = 'user') {
+            const messagesContainer = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            
+            // Use the existing CSS classes for proper styling
+            messageDiv.className = `message ${type}`;
+            
+            // Get current time
+            const now = new Date();
+            const timeString = now.toLocaleTimeString('en-US', { 
+                hour12: false, 
+                hour: '2-digit', 
+                minute: '2-digit', 
+                second: '2-digit' 
+            });
             
             messageDiv.innerHTML = `
-                <div class="font-semibold text-sm">${sender}</div>
-                <div class="text-sm whitespace-pre-wrap">${text}</div>
-            `
+                <div class="message-time">${timeString}</div>
+                <div class="message-text">${text}</div>
+            `;
             
-            messagesContainer.appendChild(messageDiv)
-            messagesContainer.scrollTop = messagesContainer.scrollHeight
+            messagesContainer.appendChild(messageDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
         }
         
         function showInteractionIndicator(text, interactive) {
@@ -651,7 +659,7 @@
         sendButton.addEventListener('click', () => {
             const text = messageInput.value.trim();
             if (text) {
-                addMessage(text, 'user');
+                addMessage(`💬 ${text}`, 'user');
                 // Send to main process for session memory
                 ipcRenderer.send('text-input', text);
                 messageInput.value = '';
@@ -787,14 +795,14 @@
             const ocrText = data.text
             if (ocrText && ocrText.trim()) {
                 // Add OCR text to chat
-                addMessage('OCR Result', ocrText, 'ocr')
+                addMessage(`📷 OCR Result: ${ocrText}`, 'transcription')
             }
         })
 
         // Listen for OCR errors
         window.electronAPI.onOcrError((event, data) => {
             console.error('OCR error in chat:', data.error)
-            addMessage('OCR Error', data.error, 'error')
+            addMessage(`❌ OCR Error: ${data.error}`, 'error')
         })
 
         // Listen for session events
@@ -810,13 +818,13 @@
         // Listen for LLM responses
         window.electronAPI.onLlmResponse((event, data) => {
             console.log('LLM response received in chat:', data)
-            addMessage('LLM Analysis', data.response, 'llm')
+            addMessage(`🤖 LLM Analysis: ${data.response}`, 'system')
         })
 
         // Listen for LLM errors
         window.electronAPI.onLlmError((event, data) => {
             console.error('LLM error in chat:', data.error)
-            addMessage('LLM Error', data.error, 'error')
+            addMessage(`❌ LLM Error: ${data.error}`, 'error')
         })
     </script>
 </body>

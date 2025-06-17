@@ -730,17 +730,17 @@ app.whenReady().then(() => {
 
   globalShortcut.register('CommandOrControl+Up', () => {
     if (!isWindowHidden) {
-      const nextSkill = getNextSkill()
-      setActiveSkill(nextSkill)
-      console.log('Switched to next skill:', nextSkill)
+      const prevSkill = getPreviousSkill()
+      setActiveSkill(prevSkill)
+      console.log('Switched to previous skill:', prevSkill)
     }
   })
 
   globalShortcut.register('CommandOrControl+Down', () => {
     if (!isWindowHidden) {
-      const prevSkill = getPreviousSkill()
-      setActiveSkill(prevSkill)
-      console.log('Switched to previous skill:', prevSkill)
+      const nextSkill = getNextSkill()
+      setActiveSkill(nextSkill)
+      console.log('Switched to next skill:', nextSkill)
     }
   })
 
@@ -930,6 +930,10 @@ ipcMain.on('debug-media-permissions', (event) => {
 ipcMain.on('skill-selected', (event, skillName) => {
   console.log('Skill selected:', skillName)
   addToSessionMemory('Skill selected', { skill: skillName })
+  
+  // Update the global active skill and broadcast to all windows
+  setActiveSkill(skillName)
+  
   // You can add specific logic for each skill here
   switch (skillName) {
     case 'dsa':
@@ -983,6 +987,12 @@ ipcMain.on('text-input', (event, text) => {
 ipcMain.on('request-session-history', (event) => {
   const history = getSessionHistory()
   event.reply('session-history', history)
+})
+
+// Handle current skill state requests
+ipcMain.on('request-current-skill', (event) => {
+  console.log('Current skill requested, sending:', activeSkill)
+  event.reply('current-skill', { skill: activeSkill })
 })
 
 // Session memory management functions
@@ -1881,14 +1891,14 @@ function createLLMResponseWindow() {
 
 // Skill management functions
 function getNextSkill() {
-  const skills = ['dsa', 'behavioral', 'sales', 'presentation', 'data-science']
+  const skills = ['dsa', 'behavioral', 'system-design', 'sales', 'presentation', 'negotiation', 'data-science', 'programming', 'devops']
   const currentIndex = skills.indexOf(activeSkill)
   const nextIndex = (currentIndex + 1) % skills.length
   return skills[nextIndex]
 }
 
 function getPreviousSkill() {
-  const skills = ['dsa', 'behavioral', 'sales', 'presentation', 'data-science']
+  const skills = ['dsa', 'behavioral', 'system-design', 'sales', 'presentation', 'negotiation', 'data-science', 'programming', 'devops']
   const currentIndex = skills.indexOf(activeSkill)
   const prevIndex = (currentIndex - 1 + skills.length) % skills.length
   return skills[prevIndex]

@@ -296,9 +296,9 @@
             </div>
             
             <div class="help-text">
-                <strong>Navigation:</strong> Cmd+Up/Down to select skills<br>
+                <strong>Navigation:</strong> ⌘↑/↓ to navigate skills (global) • Click to select<br>
                 <strong>Activation:</strong> Enter to activate selected skill<br>
-                <strong>Movement:</strong> Cmd+Left/Right to move window
+                <strong>Shortcuts:</strong> Alt+3 to show/hide • ⌘\ to hide all windows
             </div>
         </div>
     </div>
@@ -356,6 +356,20 @@
             selectSkill(skillName);
         });
         
+        // Handle global skill changes from main process
+        ipcRenderer.on('skill-changed', (event, data) => {
+            console.log('Global skill changed to:', data.skill);
+            selectSkill(data.skill, true); // fromGlobal = true to avoid circular events
+        });
+        
+        // Handle current skill state response
+        ipcRenderer.on('current-skill', (event, data) => {
+            console.log('Received current skill state:', data.skill);
+            if (data.skill) {
+                selectSkill(data.skill, true); // fromGlobal = true to avoid circular events
+            }
+        });
+        
         function navigateSkill(direction) {
             if (skillCards.length === 0) return;
             
@@ -388,10 +402,13 @@
                 currentCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 
                 console.log('Navigated to skill:', activeSkill);
+                
+                // Send skill selection to main process to sync across all windows
+                ipcRenderer.send('skill-selected', activeSkill);
             }
         }
         
-        function selectSkill(skillName) {
+        function selectSkill(skillName, fromGlobal = false) {
             // Remove active class from all skills
             skillCards.forEach(card => {
                 card.classList.remove('active');
@@ -414,8 +431,13 @@
                 // Update current index
                 currentSkillIndex = skillCards.indexOf(selectedCard);
                 
-                // Send skill selection to main process
-                ipcRenderer.send('skill-selected', skillName);
+                // Scroll to make the active skill visible
+                selectedCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                
+                // Only send to main process if this wasn't triggered by a global change
+                if (!fromGlobal) {
+                    ipcRenderer.send('skill-selected', skillName);
+                }
             }
         }
         
@@ -444,6 +466,20 @@
                 // Activate the selected skill
                 ipcRenderer.send('activate-skill', activeSkill);
             }
+            
+            // Handle Cmd+Up/Down for skill navigation when skills window is focused
+            // This works in conjunction with global shortcuts
+            if ((e.metaKey || e.ctrlKey) && document.hasFocus()) {
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    navigateSkill('prev');
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    navigateSkill('next');
+                }
+            }
         });
         
         // Initialize skill cards array and first skill
@@ -451,7 +487,13 @@
             skillCards = Array.from(document.querySelectorAll('.skill-card'));
             if (skillCards.length > 0) {
                 currentSkillIndex = 0;
-                selectSkill(skillCards[0].getAttribute('data-skill'));
+                // Don't automatically select the first skill - wait for global state
+                // The main process will send the current active skill
+                const firstSkill = skillCards[0].getAttribute('data-skill');
+                activeSkill = firstSkill; // Set initial active skill but don't broadcast
+                
+                // Request current skill state from main process
+                ipcRenderer.send('request-current-skill');
             }
         }
         

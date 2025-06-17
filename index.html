@@ -116,72 +116,51 @@
         .hidden-indicator.show {
             opacity: 1;
         }
+        
+        #skillIndicator {
+            background: rgba(76, 175, 80, 0.1);
+            border: 1px solid rgba(76, 175, 80, 0.3);
+            color: #4CAF50;
+        }
+        
+        #skillIndicator:hover {
+            background: rgba(76, 175, 80, 0.2);
+            border-color: rgba(76, 175, 80, 0.5);
+            color: #4CAF50;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="command-tab">
-            <div class="command-item">
-                <i class="fas fa-arrows-alt"></i>
-                <span>⌘+Arrow</span>
-            </div>
             <div class="command-separator"></div>
             <div class="command-item">
                 <i class="fas fa-camera"></i>
-                <span>⌘+S</span>
+                <span>⌘ + shift+ S</span>
             </div>
             <div class="command-separator"></div>
             <div class="command-item">
                 <i class="fas fa-microphone"></i>
-                <span>⌘+R</span>
-            </div>
-            <div class="command-separator"></div>
-            <div class="command-item">
-                <i class="fas fa-comments"></i>
-                <span>⌥+2</span>
-            </div>
-            <div class="command-separator"></div>
-            <div class="command-item">
-                <i class="fas fa-brain"></i>
-                <span>⌥+3</span>
+                <span>⌘ + R</span>
             </div>
             <div class="command-separator"></div>
             <div class="command-item" id="skillIndicator">
-                <i class="fas fa-code"></i>
+                <i class="fas fa-brain"></i>
                 <span>DSA</span>
             </div>
-            <div class="command-separator"></div>
-            <div class="command-item">
-                <i class="fas fa-history"></i>
-                <span>⌥+H</span>
-            </div>
+           
             <div class="command-separator"></div>
             <div class="command-item">
                 <i class="fas fa-trash"></i>
-                <span>⌥+;</span>
-            </div>
-            <div class="command-separator"></div>
-            <div class="command-item" id="controlsToggle">
-                <i class="fas fa-exchange-alt"></i>
-                <span>⌥+Space</span>
+                <span>⌥ + ;</span>
             </div>
             <div class="command-separator"></div>
             <div class="command-item">
                 <i class="fas fa-eye-slash"></i>
-                <span>⌘+\</span>
-            </div>
-            <div class="command-separator"></div>
-            <div class="command-item">
-                <i class="fas fa-mouse-pointer"></i>
-                <span>⌥+A</span>
+                <span>⌘ + \</span>
             </div>
             <div class="status-dot non-interactive" id="statusDot"></div>
         </div>
-    </div>
-    
-    <div class="hidden-indicator" id="hiddenIndicator">
-        <i class="fas fa-eye-slash"></i>
-        <span>Window Hidden - Press ⌘+\ to show</span>
     </div>
 
     <script>
@@ -240,7 +219,24 @@
                 controlsToggle.classList.remove('active');
             }
         });
+
+        // Handle skill changes
+        ipcRenderer.on('skill-changed', (event, data) => {
+            currentSkill = data.skill;
+            updateSkillIndicator();
+            console.log('Skill changed to:', currentSkill);
+        });
+
+        // Handle skill activation
+        ipcRenderer.on('skill-activated', (event, skillName) => {
+            currentSkill = skillName;
+            updateSkillIndicator();
+            console.log('Skill activated:', skillName);
+        });
         
+        // Initialize skill indicator
+        updateSkillIndicator();
+
         // Keyboard shortcuts for local testing
         document.addEventListener('keydown', (e) => {
             if (e.metaKey && e.key === '\\') {
@@ -438,13 +434,29 @@
         function updateSkillIndicator() {
             const skillNames = {
                 'dsa': 'DSA',
-                'behavioral': 'Behavioral',
+                'behavioral': 'Behavioral', 
                 'sales': 'Sales',
                 'presentation': 'Presentation',
-                'data-science': 'Data Science'
+                'data-science': 'Data Science',
+                'programming': 'Programming',
+                'devops': 'DevOps',
+                'system-design': 'System Design',
+                'negotiation': 'Negotiation'
             };
-            const skillName = skillNames[currentSkill] || currentSkill;
-            skillIndicator.querySelector('span').textContent = skillName;
+            
+            const skillName = skillNames[currentSkill] || currentSkill.toUpperCase();
+            const skillSpan = skillIndicator.querySelector('span');
+            if (skillSpan) {
+                skillSpan.textContent = skillName;
+                
+                // Add a subtle animation to indicate change
+                skillIndicator.style.transform = 'scale(1.1)';
+                skillIndicator.style.transition = 'transform 0.2s ease';
+                
+                setTimeout(() => {
+                    skillIndicator.style.transform = 'scale(1)';
+                }, 200);
+            }
         }
 
         // Gemini configuration functions
