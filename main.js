@@ -19,10 +19,12 @@ if (process.platform === 'darwin') {
 
 let mainWindow = null
 let chatWindow = null
+let skillsWindow = null
 let isRecording = false
 let isWindowHidden = false
 let isWindowInteractive = false
 let controlsInChat = false
+let activeWindow = 'main' // 'main', 'chat', or 'skills'
 
 async function performOCR(imagePath) {
   try {
@@ -164,6 +166,55 @@ function createChatWindow() {
   })
 }
 
+function createSkillsWindow() {
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize
+  
+  skillsWindow = new BrowserWindow({
+    width: 400,
+    height: 500,
+    x: Math.floor((width - 400) / 2),
+    y: Math.floor((height - 500) / 2),
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    webPreferences: {
+      nodeIntegration: true,
+      contextIsolation: false,
+      webSecurity: false,
+      allowRunningInsecureContent: true,
+      experimentalFeatures: true
+    },
+    show: false
+  })
+
+  // Load the skills HTML file
+  skillsWindow.loadFile('skills.html')
+  
+  // Set window to be visible on all workspaces
+  skillsWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  
+  // Handle window ready
+  skillsWindow.webContents.once('dom-ready', () => {
+    console.log('Skills window DOM ready')
+  })
+
+  skillsWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`[SKILLS CONSOLE] ${message}`)
+  })
+  
+  skillsWindow.once('ready-to-show', () => {
+    console.log('Skills window ready to show')
+    setSkillsWindowInteractive(false) // Start as non-interactive
+  })
+  
+  // Handle window close
+  skillsWindow.on('closed', () => {
+    skillsWindow = null
+  })
+}
+
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
   
@@ -269,6 +320,14 @@ function setChatWindowInteractive(interactive) {
   }
 }
 
+function setSkillsWindowInteractive(interactive) {
+  if (skillsWindow) {
+    skillsWindow.setIgnoreMouseEvents(!interactive, { forward: true })
+    skillsWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+    skillsWindow.setVisibleOnAllWorkspaces(true)
+  }
+}
+
 function toggleWindowVisibility() {
   if (isWindowHidden) {
     // Show window
@@ -278,6 +337,9 @@ function toggleWindowVisibility() {
     }
     if (chatWindow) {
       chatWindow.show()
+    }
+    if (skillsWindow) {
+      skillsWindow.show()
     }
     isWindowHidden = false
     console.log('Window shown')
@@ -289,6 +351,9 @@ function toggleWindowVisibility() {
     if (chatWindow) {
       chatWindow.hide()
     }
+    if (skillsWindow) {
+      skillsWindow.hide()
+    }
     isWindowHidden = true
     console.log('Window hidden')
   }
@@ -298,6 +363,7 @@ function toggleWindowInteraction() {
   const newInteractiveState = !isWindowInteractive
   setWindowInteractive(newInteractiveState)
   setChatWindowInteractive(newInteractiveState)
+  setSkillsWindowInteractive(newInteractiveState)
   
   if (newInteractiveState) {
     console.log('Window interaction enabled')
@@ -307,6 +373,9 @@ function toggleWindowInteraction() {
     if (chatWindow) {
       chatWindow.webContents.send('interaction-enabled')
     }
+    if (skillsWindow) {
+      skillsWindow.webContents.send('interaction-enabled')
+    }
   } else {
     console.log('Window interaction disabled')
     if (mainWindow) {
@@ -315,6 +384,40 @@ function toggleWindowInteraction() {
     if (chatWindow) {
       chatWindow.webContents.send('interaction-disabled')
     }
+    if (skillsWindow) {
+      skillsWindow.webContents.send('interaction-disabled')
+    }
+  }
+}
+
+function switchToWindow(windowType) {
+  activeWindow = windowType
+  console.log(`Switched to ${windowType} window`)
+  
+  // Update window activation indicators
+  if (chatWindow) {
+    if (windowType === 'chat') {
+      chatWindow.webContents.send('window-activated')
+    } else {
+      chatWindow.webContents.send('window-deactivated')
+    }
+  }
+  
+  if (skillsWindow) {
+    if (windowType === 'skills') {
+      skillsWindow.webContents.send('window-activated')
+    } else {
+      skillsWindow.webContents.send('window-deactivated')
+    }
+  }
+  
+  // Focus the active window
+  if (windowType === 'chat' && chatWindow) {
+    chatWindow.focus()
+  } else if (windowType === 'skills' && skillsWindow) {
+    skillsWindow.focus()
+  } else if (windowType === 'main' && mainWindow) {
+    mainWindow.focus()
   }
 }
 
@@ -353,6 +456,7 @@ app.whenReady().then(() => {
   // Create windows
   createWindow()
   createChatWindow()
+  createSkillsWindow()
 
   // Register global shortcuts
   globalShortcut.register('CommandOrControl+\\', () => {
@@ -361,6 +465,52 @@ app.whenReady().then(() => {
 
   globalShortcut.register('Alt+A', () => {
     toggleWindowInteraction()
+  })
+
+  globalShortcut.register('Alt+2', () => {
+    if (!isWindowHidden) {
+      if (activeWindow === 'chat') {
+        // If chat is active, hide it and switch to main
+        if (chatWindow) {
+          chatWindow.hide()
+        }
+        switchToWindow('main')
+      } else {
+        // Switch to chat and show it
+        switchToWindow('chat')
+        if (chatWindow) {
+          chatWindow.show()
+          chatWindow.focus()
+        }
+        // Hide skills window if it's open
+        if (skillsWindow && skillsWindow.isVisible()) {
+          skillsWindow.hide()
+        }
+      }
+    }
+  })
+
+  globalShortcut.register('Alt+3', () => {
+    if (!isWindowHidden) {
+      if (activeWindow === 'skills') {
+        // If skills is active, hide it and switch to main
+        if (skillsWindow) {
+          skillsWindow.hide()
+        }
+        switchToWindow('main')
+      } else {
+        // Switch to skills and show it
+        switchToWindow('skills')
+        if (skillsWindow) {
+          skillsWindow.show()
+          skillsWindow.focus()
+        }
+        // Hide chat window if it's open
+        if (chatWindow && chatWindow.isVisible()) {
+          chatWindow.hide()
+        }
+      }
+    }
   })
 
   globalShortcut.register('Alt+Space', () => {
@@ -379,38 +529,82 @@ app.whenReady().then(() => {
   })
 
   globalShortcut.register('CommandOrControl+Left', () => {
-    const targetWindow = controlsInChat && isRecording ? chatWindow : mainWindow
-    if (targetWindow && !isWindowHidden) {
-      const [x, y] = targetWindow.getPosition()
-      targetWindow.setPosition(Math.max(0, x - 50), y)
+    if (activeWindow === 'skills' && skillsWindow) {
+      // For skills window, move left only
+      const [x, y] = skillsWindow.getPosition()
+      skillsWindow.setPosition(Math.max(0, x - 50), y)
+    } else {
+      // For other windows, move left
+      let targetWindow = mainWindow
+      if (activeWindow === 'chat' && chatWindow) {
+        targetWindow = chatWindow
+      }
+      
+      if (targetWindow && !isWindowHidden) {
+        const [x, y] = targetWindow.getPosition()
+        targetWindow.setPosition(Math.max(0, x - 50), y)
+      }
     }
   })
 
   globalShortcut.register('CommandOrControl+Right', () => {
-    const targetWindow = controlsInChat && isRecording ? chatWindow : mainWindow
-    if (targetWindow && !isWindowHidden) {
-      const [x, y] = targetWindow.getPosition()
+    if (activeWindow === 'skills' && skillsWindow) {
+      // For skills window, move right only
+      const [x, y] = skillsWindow.getPosition()
       const { width } = screen.getPrimaryDisplay().workAreaSize
-      const windowWidth = targetWindow.getBounds().width
-      targetWindow.setPosition(Math.min(width - windowWidth, x + 100), y)
+      const windowWidth = skillsWindow.getBounds().width
+      skillsWindow.setPosition(Math.min(width - windowWidth, x + 50), y)
+    } else {
+      // For other windows, move right
+      let targetWindow = mainWindow
+      if (activeWindow === 'chat' && chatWindow) {
+        targetWindow = chatWindow
+      }
+      
+      if (targetWindow && !isWindowHidden) {
+        const [x, y] = targetWindow.getPosition()
+        const { width } = screen.getPrimaryDisplay().workAreaSize
+        const windowWidth = targetWindow.getBounds().width
+        targetWindow.setPosition(Math.min(width - windowWidth, x + 100), y)
+      }
     }
   })
 
   globalShortcut.register('CommandOrControl+Up', () => {
-    const targetWindow = controlsInChat && isRecording ? chatWindow : mainWindow
-    if (targetWindow && !isWindowHidden) {
-      const [x, y] = targetWindow.getPosition()
-      targetWindow.setPosition(x, Math.max(0, y - 50))
+    if (activeWindow === 'skills' && skillsWindow) {
+      // For skills window, navigate to previous skill
+      skillsWindow.webContents.send('navigate-skill', 'prev')
+    } else {
+      // For other windows, move up
+      let targetWindow = mainWindow
+      if (activeWindow === 'chat' && chatWindow) {
+        targetWindow = chatWindow
+      }
+      
+      if (targetWindow && !isWindowHidden) {
+        const [x, y] = targetWindow.getPosition()
+        targetWindow.setPosition(x, Math.max(0, y - 50))
+      }
     }
   })
 
   globalShortcut.register('CommandOrControl+Down', () => {
-    const targetWindow = controlsInChat && isRecording ? chatWindow : mainWindow
-    if (targetWindow && !isWindowHidden) {
-      const [x, y] = targetWindow.getPosition()
-      const { height } = screen.getPrimaryDisplay().workAreaSize
-      const windowHeight = targetWindow.getBounds().height
-      targetWindow.setPosition(x, Math.min(height - windowHeight, y + 50))
+    if (activeWindow === 'skills' && skillsWindow) {
+      // For skills window, navigate to next skill
+      skillsWindow.webContents.send('navigate-skill', 'next')
+    } else {
+      // For other windows, move down
+      let targetWindow = mainWindow
+      if (activeWindow === 'chat' && chatWindow) {
+        targetWindow = chatWindow
+      }
+      
+      if (targetWindow && !isWindowHidden) {
+        const [x, y] = targetWindow.getPosition()
+        const { height } = screen.getPrimaryDisplay().workAreaSize
+        const windowHeight = targetWindow.getBounds().height
+        targetWindow.setPosition(x, Math.min(height - windowHeight, y + 50))
+      }
     }
   })
 
@@ -561,5 +755,44 @@ ipcMain.on('debug-media-permissions', (event) => {
         console.log('TCC reset failed (this is normal):', error.message)
       }
     })
+  }
+})
+
+// Handle skill selection from skills window
+ipcMain.on('skill-selected', (event, skillName) => {
+  console.log('Skill selected:', skillName)
+  // You can add specific logic for each skill here
+  switch (skillName) {
+    case 'dsa':
+      console.log('DSA Interview mode activated')
+      break
+    case 'behavioral':
+      console.log('Behavioral Interview mode activated')
+      break
+    case 'sales':
+      console.log('Sales mode activated')
+      break
+    case 'presentation':
+      console.log('Presentation mode activated')
+      break
+    case 'data-science':
+      console.log('Data Science mode activated')
+      break
+    default:
+      console.log(`${skillName} mode activated`)
+  }
+})
+
+// Handle skill activation from skills window
+ipcMain.on('activate-skill', (event, skillName) => {
+  console.log('Activating skill:', skillName)
+  // You can add specific activation logic here
+  // For example, switch to chat window and start recording with specific prompts
+  if (chatWindow) {
+    switchToWindow('chat')
+    chatWindow.show()
+    chatWindow.focus()
+    // You could send specific prompts or configurations based on the skill
+    chatWindow.webContents.send('skill-activated', skillName)
   }
 })

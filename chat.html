@@ -536,6 +536,27 @@
             // No visual feedback needed for controls movement
         });
         
+        // Handle skill activation
+        ipcRenderer.on('skill-activated', (event, skillName) => {
+            console.log('Skill activated in chat:', skillName);
+            
+            // Add skill-specific prompts or instructions
+            const skillPrompts = {
+                'dsa': 'DSA Interview Mode: I\'ll help you practice data structures and algorithms. Ask me to explain concepts, solve problems, or review your solutions.',
+                'behavioral': 'Behavioral Interview Mode: I\'ll help you practice STAR method responses and behavioral questions. Share your experiences and I\'ll help you structure your answers.',
+                'sales': 'Sales Mode: I\'ll help you practice sales techniques, objection handling, and closing strategies. Role-play sales scenarios with me.',
+                'presentation': 'Presentation Mode: I\'ll help you practice public speaking and presentation skills. I can provide feedback on your delivery and content.',
+                'data-science': 'Data Science Mode: I\'ll help you with machine learning concepts, statistics, and data analysis. Ask me technical questions or discuss your projects.',
+                'programming': 'Programming Mode: I\'ll help you with coding best practices, debugging, and software development concepts.',
+                'devops': 'DevOps Mode: I\'ll help you with CI/CD, cloud infrastructure, and deployment strategies.',
+                'system-design': 'System Design Mode: I\'ll help you practice large-scale system architecture and design patterns.',
+                'negotiation': 'Negotiation Mode: I\'ll help you practice negotiation strategies and conflict resolution techniques.'
+            };
+            
+            const prompt = skillPrompts[skillName] || `Ready to help with ${skillName}! Start speaking or ask me questions.`;
+            addMessage(prompt, 'system');
+        });
+        
         function addMessage(text, type = 'user') {
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${type}`;
