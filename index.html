@@ -26,22 +26,22 @@
         
         .command-tab {
             height: 28px;
-            background: linear-gradient(135deg, rgba(0, 0, 0, 0.85) 0%, rgba(20, 20, 20, 0.9) 100%);
-            backdrop-filter: blur(15px);
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(20, 20, 20, 0.5) 100%);
+            backdrop-filter: blur(20px);
             border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 16px;
             padding: 0 12px;
-            color: rgba(255, 255, 255, 0.8);
+            color: rgba(255, 255, 255, 0.9);
             font-size: 11px;
-            font-weight: 500;
+            font-weight: 600;
             -webkit-app-region: no-drag;
             flex-wrap: nowrap;
             overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.2);
         }
         
         .command-item {
@@ -53,46 +53,47 @@
             padding: 4px 8px;
             border-radius: 4px;
             transition: all 0.2s ease;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
         }
         
         .command-item:hover {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.15);
+            color: rgba(255, 255, 255, 1);
+        }
+        
+        .command-item.active {
+            color: #4CAF50;
+            text-shadow: 0 1px 2px rgba(76, 175, 80, 0.3);
+        }
+        
+        .command-item.active:hover {
+            background: rgba(76, 175, 80, 0.15);
+            color: #4CAF50;
         }
         
         .command-separator {
             width: 1px;
             height: 16px;
-            background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.3), transparent);
+            background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.25), transparent);
             flex-shrink: 0;
         }
         
-        .interaction-indicator {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.8);
-            color: rgba(255, 255, 255, 0.9);
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 500;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-            pointer-events: none;
-            z-index: 1000;
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            margin-left: 8px;
+            transition: all 0.3s ease;
         }
         
-        .interaction-indicator.show {
-            opacity: 1;
+        .status-dot.interactive {
+            background: #4CAF50;
+            box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
         }
         
-        .interaction-indicator.interactive {
-            background: rgba(76, 175, 80, 0.9);
-        }
-        
-        .interaction-indicator.non-interactive {
-            background: rgba(244, 67, 54, 0.9);
+        .status-dot.non-interactive {
+            background: #f44336;
+            box-shadow: 0 0 8px rgba(244, 67, 54, 0.6);
         }
         
         .hidden-indicator {
@@ -140,7 +141,7 @@
                 <span>⌘+T</span>
             </div>
             <div class="command-separator"></div>
-            <div class="command-item">
+            <div class="command-item" id="controlsToggle">
                 <i class="fas fa-exchange-alt"></i>
                 <span>⌥+Space</span>
             </div>
@@ -154,12 +155,8 @@
                 <i class="fas fa-mouse-pointer"></i>
                 <span>⌥+A</span>
             </div>
+            <div class="status-dot non-interactive" id="statusDot"></div>
         </div>
-    </div>
-    
-    <div class="interaction-indicator" id="interactionIndicator">
-        <i class="fas fa-mouse-pointer"></i>
-        <span id="interactionText">Non-Interactive</span>
     </div>
     
     <div class="hidden-indicator" id="hiddenIndicator">
@@ -170,32 +167,24 @@
     <script>
         const { ipcRenderer } = require('electron');
         
-        const interactionIndicator = document.getElementById('interactionIndicator');
-        const interactionText = document.getElementById('interactionText');
+        const statusDot = document.getElementById('statusDot');
         const hiddenIndicator = document.getElementById('hiddenIndicator');
+        const controlsToggle = document.getElementById('controlsToggle');
         
         let isInteractive = false;
         let isHidden = false;
+        let controlsInChat = false;
         
         // Handle interaction state changes
         ipcRenderer.on('interaction-enabled', () => {
             isInteractive = true;
-            showInteractionIndicator('Interactive', true);
+            statusDot.className = 'status-dot interactive';
         });
         
         ipcRenderer.on('interaction-disabled', () => {
             isInteractive = false;
-            showInteractionIndicator('Non-Interactive', false);
+            statusDot.className = 'status-dot non-interactive';
         });
-        
-        function showInteractionIndicator(text, interactive) {
-            interactionText.textContent = text;
-            interactionIndicator.className = `interaction-indicator show ${interactive ? 'interactive' : 'non-interactive'}`;
-            
-            setTimeout(() => {
-                interactionIndicator.classList.remove('show');
-            }, 2000);
-        }
         
         function showHiddenIndicator() {
             hiddenIndicator.classList.add('show');
@@ -222,10 +211,11 @@
         
         // Handle controls movement
         ipcRenderer.on('controls-changed', (event, inChat) => {
+            controlsInChat = inChat;
             if (inChat) {
-                showInteractionIndicator('Controls moved to chat window', false);
+                controlsToggle.classList.add('active');
             } else {
-                showInteractionIndicator('Controls moved to main window', true);
+                controlsToggle.classList.remove('active');
             }
         });
         
@@ -240,7 +230,7 @@
             
             if (e.altKey && e.key === 'A') {
                 isInteractive = !isInteractive;
-                showInteractionIndicator(isInteractive ? 'Interactive' : 'Non-Interactive', isInteractive);
+                statusDot.className = `status-dot ${isInteractive ? 'interactive' : 'non-interactive'}`;
             }
         });
     </script>

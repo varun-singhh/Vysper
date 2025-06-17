@@ -77,7 +77,7 @@ function createChatWindow() {
   chatWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   
   chatWindow.once('ready-to-show', () => {
-    chatWindow.show()
+    // Don't show the window initially - it will be shown when recording starts
     setChatWindowInteractive(false) // Start as non-interactive
   })
   
@@ -325,7 +325,7 @@ app.whenReady().then(() => {
   })
 
   globalShortcut.register('CommandOrControl+T', () => {
-    if (chatWindow && !isWindowHidden) {
+    if (chatWindow && !isWindowHidden && isRecording) {
       if (chatWindow.isVisible()) {
         chatWindow.hide()
       } else {
@@ -340,9 +340,12 @@ app.whenReady().then(() => {
       isRecording = !isRecording
       if (isRecording) {
         console.log('Recording started')
+        chatWindow.show()
+        chatWindow.focus()
         chatWindow.webContents.send('recording-started')
       } else {
         console.log('Recording stopped')
+        chatWindow.hide()
         chatWindow.webContents.send('recording-stopped')
         // Reset controls to main window when recording stops
         controlsInChat = false
@@ -360,6 +363,7 @@ app.whenReady().then(() => {
     if (chatWindow && !isWindowHidden) {
       isRecording = false
       console.log('Recording stopped')
+      chatWindow.hide()
       chatWindow.webContents.send('recording-stopped')
       // Reset controls to main window when recording stops
       controlsInChat = false

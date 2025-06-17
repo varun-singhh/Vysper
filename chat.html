@@ -17,30 +17,33 @@
         .chat-container {
             width: 100%;
             height: 100vh;
-            background: linear-gradient(135deg, rgba(0, 0, 0, 0.9) 0%, rgba(20, 20, 20, 0.95) 100%);
-            backdrop-filter: blur(20px);
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 0%, rgba(20, 20, 20, 0.4) 100%);
+            backdrop-filter: blur(25px);
             border-radius: 12px;
             border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 4px 25px rgba(0, 0, 0, 0.15);
             display: flex;
             flex-direction: column;
             -webkit-app-region: drag;
         }
         .chat-header {
             padding: 16px 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
             display: flex;
             align-items: center;
             justify-content: space-between;
             -webkit-app-region: no-drag;
+            background: rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
         }
         .header-title {
-            color: rgba(255, 255, 255, 0.9);
+            color: rgba(255, 255, 255, 0.95);
             font-size: 14px;
             font-weight: 600;
             display: flex;
             align-items: center;
             gap: 8px;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         }
         .recording-indicator {
             width: 8px;
@@ -49,11 +52,12 @@
             background: #ff4757;
             animation: pulse 2s infinite;
             display: none;
+            box-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
         }
         @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.1); }
+            100% { opacity: 1; transform: scale(1); }
         }
         .chat-messages {
             flex: 1;
@@ -64,84 +68,96 @@
         .message {
             margin-bottom: 16px;
             padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.08);
             border-radius: 8px;
             border-left: 3px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(5px);
         }
         .message-time {
-            color: rgba(255, 255, 255, 0.5);
+            color: rgba(255, 255, 255, 0.6);
             font-size: 11px;
             margin-bottom: 4px;
+            font-weight: 500;
         }
         .message-text {
-            color: rgba(255, 255, 255, 0.9);
+            color: rgba(255, 255, 255, 0.95);
             font-size: 13px;
             line-height: 1.4;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
         }
         .chat-input {
             padding: 16px 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
             -webkit-app-region: no-drag;
+            background: rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(10px);
         }
         .input-container {
             display: flex;
             align-items: center;
             gap: 12px;
-            background: rgba(255, 255, 255, 0.05);
+            background: rgba(255, 255, 255, 0.1);
             border-radius: 8px;
             padding: 8px 12px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
         }
         .input-field {
             flex: 1;
             background: transparent;
             border: none;
-            color: rgba(255, 255, 255, 0.9);
+            color: rgba(255, 255, 255, 0.95);
             font-size: 13px;
             outline: none;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
         }
         .input-field::placeholder {
             color: rgba(255, 255, 255, 0.5);
         }
         .send-button {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.15);
             border: none;
             border-radius: 6px;
             padding: 6px 10px;
-            color: rgba(255, 255, 255, 0.8);
+            color: rgba(255, 255, 255, 0.9);
             cursor: pointer;
             transition: all 0.2s;
         }
         .send-button:hover {
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.25);
+            color: rgba(255, 255, 255, 1);
         }
         .status-message {
             text-align: center;
-            color: rgba(255, 255, 255, 0.6);
+            color: rgba(255, 255, 255, 0.7);
             font-size: 12px;
             padding: 20px;
             font-style: italic;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
         }
         .error-message {
             color: #ff4757;
             font-size: 12px;
             padding: 10px;
             text-align: center;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         }
         .mic-button {
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.15);
             border: none;
             border-radius: 6px;
             padding: 6px 10px;
-            color: rgba(255, 255, 255, 0.8);
+            color: rgba(255, 255, 255, 0.9);
             cursor: pointer;
             transition: all 0.2s;
         }
         .mic-button:hover {
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.25);
+            color: rgba(255, 255, 255, 1);
         }
         .mic-button.recording {
-            background: #ff4757;
+            background: rgba(255, 71, 87, 0.8);
             color: white;
+            box-shadow: 0 0 15px rgba(255, 71, 87, 0.4);
         }
         .help-text {
             color: rgba(255, 255, 255, 0.7);
@@ -149,6 +165,7 @@
             text-align: center;
             padding: 10px;
             line-height: 1.4;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
         }
         .retry-button {
             background: rgba(255, 255, 255, 0.1);
@@ -422,11 +439,7 @@
         
         // Handle controls movement
         ipcRenderer.on('controls-changed', (event, inChat) => {
-            if (inChat) {
-                showInteractionIndicator('Controls active on chat window', true);
-            } else {
-                showInteractionIndicator('Controls moved to main window', false);
-            }
+            // No visual feedback needed for controls movement
         });
         
         function addMessage(text, type = 'user') {
