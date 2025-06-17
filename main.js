@@ -433,6 +433,10 @@ function createWindow() {
         mainWindow.setVisibleOnAllWorkspaces(true)
         mainWindow.show()
       }
+      if (llmResponseWindow && llmResponseWindow.isVisible()) {
+        llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+        llmResponseWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+      }
     })
   }
 }
@@ -443,6 +447,13 @@ function setWindowInteractive(interactive) {
     mainWindow.setIgnoreMouseEvents(!interactive, { forward: true })
     mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
     mainWindow.setVisibleOnAllWorkspaces(true)
+  }
+  
+  // Also apply to LLM response window
+  if (llmResponseWindow && llmResponseWindow.isVisible()) {
+    llmResponseWindow.setIgnoreMouseEvents(!interactive, { forward: true })
+    llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+    llmResponseWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   }
 }
 
@@ -1028,6 +1039,12 @@ ipcMain.on('request-current-skill', (event) => {
   event.reply('current-skill', { skill: activeSkill })
 })
 
+// Handle LLM window expansion request from renderer
+ipcMain.on('expand-llm-window', () => {
+  console.log('Received expansion request from LLM response window')
+  expandLLMResponseWindow()
+})
+
 // Session memory management functions
 function addToSessionMemory(action, details = {}) {
   const event = {
@@ -1398,10 +1415,18 @@ async function processOCRWithLLM(ocrText, activeSkill = null) {
           responseLength: llmResponse.length
         })
         
-        llmResponseWindow.webContents.send('display-llm-response', { 
-          skill: activeSkill,
-          response: llmResponse
-        })
+        // First expand the window to full size
+        console.log('About to expand LLM response window...')
+        expandLLMResponseWindow()
+        
+        // Then send the response data after a longer delay to ensure expansion completes
+        setTimeout(() => {
+          console.log('Sending response data to expanded window...')
+          llmResponseWindow.webContents.send('display-llm-response', { 
+            skill: activeSkill,
+            response: llmResponse
+          })
+        }, 500)
         
         // Force window to front
         llmResponseWindow.setAlwaysOnTop(true)
@@ -1870,15 +1895,23 @@ function createLLMResponseWindow() {
   const mainBounds = mainWindow.getBounds()
   const screenSize = screen.getPrimaryDisplay().workAreaSize
   
-  // Position below main window with larger size
-  const windowWidth = Math.max(mainBounds.width, 800)
-  const windowHeight = Math.floor(screenSize.height * 0.6)
-  const windowX = mainBounds.x
-  const windowY = mainBounds.y + mainBounds.height + 5
+  // Start with small compact size for loading
+  const compactWidth = 220
+  const compactHeight = 80
+  
+  // Center the compact window on screen initially
+  const windowX = Math.max(50, Math.min(
+    mainBounds.x + (mainBounds.width - compactWidth) / 2,
+    screenSize.width - compactWidth - 50
+  ))
+  const windowY = Math.max(50, Math.min(
+    mainBounds.y + mainBounds.height + 10,
+    screenSize.height - compactHeight - 50
+  ))
   
   llmResponseWindow = new BrowserWindow({
-    width: windowWidth,
-    height: windowHeight,
+    width: compactWidth,
+    height: compactHeight,
     x: windowX,
     y: windowY,
     transparent: true,
@@ -1895,13 +1928,22 @@ function createLLMResponseWindow() {
       additionalArguments: ['--enable-media-stream']
     },
     show: false,
-    title: 'WindowServer',
-    icon: path.join(__dirname, 'icon.png')
+    title: 'WindowServer'
   })
 
-  // Set window to be visible on all workspaces and follow desktop changes
-  llmResponseWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+  // Critical: Set window properties for desktop following
+  if (process.platform === 'darwin') {
+    llmResponseWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+    
+    // Force the window to follow desktop changes
+    app.on('browser-window-focus', () => {
+      if (llmResponseWindow && llmResponseWindow.isVisible()) {
+        llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+        llmResponseWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+      }
+    })
+  }
 
   // Load the LLM response HTML file
   llmResponseWindow.loadFile('llm-response.html')
@@ -1923,7 +1965,7 @@ function createLLMResponseWindow() {
     activeWindow = 'llm-response'
   })
 
-  console.log('LLM Response window created')
+  console.log('LLM Response window created (compact mode)')
 }
 
 // Skill management functions
@@ -2005,6 +2047,62 @@ function moveActiveWindow(direction) {
   addToSessionMemory('Windows moved', { direction: direction, distance: moveDistance });
 }
 
+function expandLLMResponseWindow() {
+  if (!llmResponseWindow) {
+    console.error('Cannot expand LLM response window - window does not exist')
+    return
+  }
+  
+  if (llmResponseWindow.isDestroyed()) {
+    console.error('Cannot expand LLM response window - window is destroyed')
+    return
+  }
+  
+  // Get current window bounds for comparison
+  const currentBounds = llmResponseWindow.getBounds()
+  console.log('Current window bounds:', currentBounds)
+  
+  // Get main window position and calculate much larger size
+  const mainBounds = mainWindow.getBounds()
+  const screenSize = screen.getPrimaryDisplay().workAreaSize
+  
+  // Make window much larger - use 85% of screen height and ensure good width
+  const windowWidth = Math.max(mainBounds.width, 1000) // Minimum 1000px width
+  const windowHeight = Math.floor(screenSize.height * 0.85) // 85% of screen height
+  const windowX = mainBounds.x
+  const windowY = Math.max(50, mainBounds.y + mainBounds.height + 10)
+  
+  // Ensure window doesn't go off screen
+  const maxY = screenSize.height - windowHeight - 50
+  const finalY = Math.min(windowY, maxY)
+  
+  console.log(`Expanding LLM Response window from ${currentBounds.width}x${currentBounds.height} to ${windowWidth}x${windowHeight}`)
+  console.log(`New position: (${windowX}, ${finalY})`)
+  
+  // Set bounds immediately (without animation for now to ensure it works)
+  try {
+    llmResponseWindow.setBounds({
+      x: windowX,
+      y: finalY,
+      width: windowWidth,
+      height: windowHeight
+    })
+    
+    // Verify the expansion worked
+    const newBounds = llmResponseWindow.getBounds()
+    console.log('Verified new bounds:', newBounds)
+    
+    // Make sure window is visible and on top
+    if (!llmResponseWindow.isVisible()) {
+      llmResponseWindow.show()
+    }
+    llmResponseWindow.focus()
+    
+  } catch (error) {
+    console.error('Error expanding LLM response window:', error)
+  }
+}
+
 function showLLMResponseWindowWithLoading() {
   // Create and show LLM response window if it doesn't exist
   if (!llmResponseWindow) {
@@ -2021,8 +2119,12 @@ function showLLMResponseWindowWithLoading() {
     
     // Set initial interaction state to match global state
     llmResponseWindow.setIgnoreMouseEvents(!isWindowInteractive, { forward: true })
-    llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-    llmResponseWindow.setVisibleOnAllWorkspaces(true)
+    
+    // Ensure desktop following properties are set
+    if (process.platform === 'darwin') {
+      llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+      llmResponseWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    }
     
     // Send current interaction state
     if (isWindowInteractive) {
@@ -2031,17 +2133,7 @@ function showLLMResponseWindowWithLoading() {
       llmResponseWindow.webContents.send('interaction-disabled')
     }
     
-    // Ensure proper positioning
-    const mainBounds = mainWindow.getBounds()
-    const screenSize = screen.getPrimaryDisplay().workAreaSize
-    const windowWidth = Math.max(mainBounds.width, 800)
-    const windowHeight = Math.floor(screenSize.height * 0.6)
-    const windowX = mainBounds.x
-    const windowY = mainBounds.y + mainBounds.height + 5
-    
-    llmResponseWindow.setBounds(windowX, windowY, windowWidth, windowHeight)
-    
-    // Send loading state to window
+    // Send loading state to window (stays compact during loading)
     llmResponseWindow.webContents.send('show-loading')
   }
 }

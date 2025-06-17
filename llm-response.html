@@ -80,17 +80,34 @@
             max-height: 100%;
         }
         
-        /* Hide scrollbars but keep functionality */
+        /* Show minimal scrollbars for better UX */
         .text-panel::-webkit-scrollbar, .code-panel::-webkit-scrollbar, .full-content::-webkit-scrollbar {
-            display: none;
+            width: 6px;
+            height: 6px;
         }
         
+        .text-panel::-webkit-scrollbar-track, .code-panel::-webkit-scrollbar-track, .full-content::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 3px;
+        }
+        
+        .text-panel::-webkit-scrollbar-thumb, .code-panel::-webkit-scrollbar-thumb, .full-content::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+        }
+        
+        .text-panel::-webkit-scrollbar-thumb:hover, .code-panel::-webkit-scrollbar-thumb:hover, .full-content::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+        
+        /* Enable smooth scrolling always, better responsiveness when interactive */
         .text-panel, .code-panel, .full-content {
-            -ms-overflow-style: none;  /* Internet Explorer 10+ */
-            scrollbar-width: none;  /* Firefox */
+            scroll-behavior: smooth;
+            overflow-y: auto;
+            overflow-x: auto;
         }
         
-        /* Enable smooth scrolling when interactive */
+        /* Enhanced scrolling when interactive */
         .interactive-scrolling .text-panel, 
         .interactive-scrolling .code-panel, 
         .interactive-scrolling .full-content {
@@ -157,6 +174,48 @@
             height: 100vh;
             background-color: rgba(255, 255, 255, 0.1);
             backdrop-filter: blur(8px);
+        }
+        
+        .loading-compact {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 200px;
+            height: 60px;
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(20, 20, 20, 0.5) 100%);
+            backdrop-filter: blur(25px);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 4px 25px rgba(0, 0, 0, 0.15);
+        }
+        
+        .dots-container {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        
+        .bouncing-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #4CAF50;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+        
+        .bouncing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .bouncing-dot:nth-child(2) { animation-delay: -0.16s; }
+        .bouncing-dot:nth-child(3) { animation-delay: 0s; }
+        
+        @keyframes bounce {
+            0%, 80%, 100% {
+                transform: scale(0);
+                opacity: 0.5;
+            }
+            40% {
+                transform: scale(1);
+                opacity: 1;
+            }
         }
         .response-content {
             background-color: rgba(255, 255, 255, 0.1);
@@ -254,8 +313,13 @@
 <body class="text-white">
     <!-- Loading State -->
     <div id="loading" class="loading">
-        <div class="text-center">
-            <p class="text-gray-300 text-lg font-medium">Generating...</p>
+        <div class="loading-compact">
+            <span class="text-gray-300 text-sm font-medium mr-2">Generating</span>
+            <div class="dots-container">
+                <div class="bouncing-dot"></div>
+                <div class="bouncing-dot"></div>
+                <div class="bouncing-dot"></div>
+            </div>
         </div>
     </div>
 
@@ -314,9 +378,24 @@
             console.log('LLM Response window received data:', data);
             console.log('Response length:', data.response ? data.response.length : 0);
             console.log('Skill:', data.skill);
-            console.log('Window size:', window.innerWidth, 'x', window.innerHeight);
-            hideLoadingState();
-            displayResponse(data);
+            console.log('Window size before display:', window.innerWidth, 'x', window.innerHeight);
+            
+            // Check if window is still small (compact size) and request expansion
+            if (window.innerWidth < 500 || window.innerHeight < 300) {
+                console.log('Window appears to still be compact size, requesting expansion...');
+                ipcRenderer.send('expand-llm-window');
+                
+                // Wait a bit for expansion, then display content
+                setTimeout(() => {
+                    console.log('Window size after expansion request:', window.innerWidth, 'x', window.innerHeight);
+                    hideLoadingState();
+                    displayResponse(data);
+                }, 300);
+            } else {
+                console.log('Window is already expanded, displaying content immediately');
+                hideLoadingState();
+                displayResponse(data);
+            }
         });
 
         // Handle interaction state changes
@@ -490,24 +569,87 @@
             console.log('LLM Response window closing');
         });
 
-        // Enhanced scrolling support for interactive mode
-        let scrollSensitivity = 3; // Adjust scroll speed
-
-        function handleWheelEvent(e) {
+        // Add keyboard scrolling support
+        document.addEventListener('keydown', (e) => {
             if (!isInteractive) return;
             
-            e.preventDefault();
+            const activeElement = document.activeElement;
+            let targetElement = null;
             
+            // Determine which panel to scroll
+            if (hasCode) {
+                // In split layout, determine which panel has focus or default to text panel
+                targetElement = document.querySelector('.text-panel');
+                if (activeElement && activeElement.closest('.code-panel')) {
+                    targetElement = document.querySelector('.code-panel');
+                }
+            } else {
+                // In full layout
+                targetElement = document.querySelector('.full-content');
+            }
+            
+            if (!targetElement) return;
+            
+            const scrollAmount = 50; // Pixels to scroll
+            
+            switch(e.key) {
+                case 'ArrowUp':
+                    e.preventDefault();
+                    targetElement.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
+                    break;
+                case 'ArrowDown':
+                    e.preventDefault();
+                    targetElement.scrollBy({ top: scrollAmount, behavior: 'smooth' });
+                    break;
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    targetElement.scrollBy({ left: -scrollAmount, behavior: 'smooth' });
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    targetElement.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+                    break;
+                case 'PageUp':
+                    e.preventDefault();
+                    targetElement.scrollBy({ top: -targetElement.clientHeight * 0.8, behavior: 'smooth' });
+                    break;
+                case 'PageDown':
+                    e.preventDefault();
+                    targetElement.scrollBy({ top: targetElement.clientHeight * 0.8, behavior: 'smooth' });
+                    break;
+                case 'Home':
+                    e.preventDefault();
+                    targetElement.scrollTo({ top: 0, behavior: 'smooth' });
+                    break;
+                case 'End':
+                    e.preventDefault();
+                    targetElement.scrollTo({ top: targetElement.scrollHeight, behavior: 'smooth' });
+                    break;
+            }
+        });
+
+        // Enhanced scrolling support - always allow scrolling, but enhanced when interactive
+        let scrollSensitivity = 2; // Adjust scroll speed
+
+        function handleWheelEvent(e) {
+            // Allow scrolling even when not interactive, but with different behavior
             const target = e.currentTarget;
             const deltaX = e.deltaX * scrollSensitivity;
             const deltaY = e.deltaY * scrollSensitivity;
             
-            // Smooth scrolling
-            target.scrollBy({
-                left: deltaX,
-                top: deltaY,
-                behavior: 'smooth'
-            });
+            if (isInteractive) {
+                // Enhanced smooth scrolling when interactive
+                e.preventDefault();
+                target.scrollBy({
+                    left: deltaX,
+                    top: deltaY,
+                    behavior: 'smooth'
+                });
+            } else {
+                // Allow natural scrolling when not interactive (don't prevent default)
+                // This allows normal mouse wheel scrolling to work
+                console.log('Scroll event in non-interactive mode - allowing natural scroll');
+            }
         }
 
         // Add enhanced scrolling to all scrollable containers
