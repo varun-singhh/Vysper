@@ -47,6 +47,7 @@ npm run build
 
 ## Project Structure
 
+<<<<<<< HEAD
 - `main.js` - Main Electron process file with window management and shortcuts
 - `index.html` - Main application window with command tab
 - `chat.html` - Chat window for speech recognition and transcription
@@ -59,3 +60,8 @@ npm run build
 - When recording, use `⌥+Space` to move controls to the chat window
 - Windows are designed to be invisible to screen sharing tools
 - Speech recognition requires internet connection for best results
+=======
+- `main.js` - Main Electron process file
+- `index.html` - Main application window
+- `package.json` - Project configuration and dependencies 
+>>>>>>> bc1fcec5eab97ca27d1e2fe1102e0c1268a0a4ad
