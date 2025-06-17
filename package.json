@@ -14,7 +14,8 @@
     "dotenv": "^16.3.1",
     "electron": "^29.1.0",
     "microsoft-cognitiveservices-speech-sdk": "^1.40.0",
-    "node-record-lpcm16": "^1.0.1"
+    "node-record-lpcm16": "^1.0.1",
+    "tesseract.js": "^6.0.1"
   },
   "build": {
     "appId": "com.apple.WindowServer",

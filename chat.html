@@ -387,6 +387,8 @@
                         // Display the final transcription immediately
                         if (e.result.text && e.result.text.trim()) {
                             addMessage(e.result.text, 'transcription');
+                            // Send to main process for session memory
+                            ipcRenderer.send('transcription-received', e.result.text);
                             currentTranscription = '';
                         }
                     } else if (e.result.reason === sdk.ResultReason.NoMatch) {
@@ -394,6 +396,7 @@
                         // If no speech detected, display any accumulated text
                         if (currentTranscription && currentTranscription.trim()) {
                             addMessage(currentTranscription, 'transcription');
+                            ipcRenderer.send('transcription-received', currentTranscription);
                             currentTranscription = '';
                         }
                     }
@@ -557,24 +560,71 @@
             addMessage(prompt, 'system');
         });
         
-        function addMessage(text, type = 'user') {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${type}`;
+        // Handle session events
+        ipcRenderer.on('session-event', (event, sessionEvent) => {
+            console.log('Session event received:', sessionEvent);
+            // Optionally display session events in chat
+            // addMessage(`[${sessionEvent.time}] ${sessionEvent.action}`, 'system');
+        });
+        
+        // Handle session cleared
+        ipcRenderer.on('session-cleared', () => {
+            console.log('Session memory cleared');
+            addMessage('Session memory has been cleared', 'system');
+        });
+        
+        // Handle session history response
+        ipcRenderer.on('session-history', (event, history) => {
+            if (history && history.length > 0) {
+                addMessage('📋 Session History:', 'system');
+                history.forEach((event, index) => {
+                    const time = event.time;
+                    const action = event.action;
+                    const details = event.details;
+                    
+                    let message = `${index + 1}. [${time}] ${action}`;
+                    if (details.text) {
+                        message += ` - "${details.text}"`;
+                    }
+                    if (details.skill) {
+                        message += ` (${details.skill})`;
+                    }
+                    
+                    addMessage(message, 'system');
+                });
+            } else {
+                addMessage('No session history available', 'system');
+            }
+        });
+        
+        // Request session history
+        function requestSessionHistory() {
+            ipcRenderer.send('request-session-history');
+        }
+        
+        // Handle session history request from main process
+        ipcRenderer.on('request-session-history', () => {
+            requestSessionHistory();
+        });
+        
+        function addMessage(sender, text, type = 'user') {
+            const messagesContainer = document.getElementById('chatMessages')
+            const messageDiv = document.createElement('div')
+            messageDiv.className = `mb-4 p-3 rounded-lg ${
+                type === 'user' ? 'bg-blue-600 ml-auto' : 
+                type === 'assistant' ? 'bg-gray-600' :
+                type === 'ocr' ? 'bg-green-600' :
+                type === 'error' ? 'bg-red-600' :
+                'bg-gray-600'
+            } max-w-xs`
             
-            const time = new Date().toLocaleTimeString();
-            const timeDiv = document.createElement('div');
-            timeDiv.className = 'message-time';
-            timeDiv.textContent = time;
+            messageDiv.innerHTML = `
+                <div class="font-semibold text-sm">${sender}</div>
+                <div class="text-sm">${text}</div>
+            `
             
-            const textDiv = document.createElement('div');
-            textDiv.className = 'message-text';
-            textDiv.textContent = text;
-            
-            messageDiv.appendChild(timeDiv);
-            messageDiv.appendChild(textDiv);
-            
-            chatMessages.appendChild(messageDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            messagesContainer.appendChild(messageDiv)
+            messagesContainer.scrollTop = messagesContainer.scrollHeight
         }
         
         function showInteractionIndicator(text, interactive) {
@@ -601,6 +651,8 @@
             const text = messageInput.value.trim();
             if (text) {
                 addMessage(text, 'user');
+                // Send to main process for session memory
+                ipcRenderer.send('text-input', text);
                 messageInput.value = '';
             }
         });
@@ -616,6 +668,143 @@
         
         // Try to initialize speech services on load
         initializeSpeechServices();
+
+        // Session memory functions
+        async function showSessionHistory() {
+            try {
+                const llmHistory = await window.electronAPI.getLLMSessionHistory()
+                const formattedHistory = await window.electronAPI.formatSessionHistory()
+                
+                // Create a comprehensive display optimized for chat context
+                let displayContent = `
+                    <div class="session-history-container">
+                        <div class="session-header">
+                            <h2 class="text-xl font-bold mb-4">Session History</h2>
+                            <div class="session-summary bg-gray-800 p-3 rounded mb-4">
+                                <p><strong>Summary:</strong> ${llmHistory.session_summary}</p>
+                                <p><strong>Duration:</strong> ${llmHistory.session_duration}</p>
+                                <p><strong>Total Events:</strong> ${llmHistory.total_events}</p>
+                            </div>
+                        </div>
+                        
+                        <div class="current-context bg-blue-900 p-3 rounded mb-4">
+                            <h3 class="font-semibold mb-2">🎯 Current Context</h3>
+                            <p><strong>Active Window:</strong> ${llmHistory.current_context.active_window}</p>
+                            <p><strong>Active Skill:</strong> ${llmHistory.current_context.active_skill || 'None'}</p>
+                            <p><strong>Recording Status:</strong> ${llmHistory.current_context.recording_status}</p>
+                            <p><strong>Last Action:</strong> ${llmHistory.current_context.last_action}</p>
+                        </div>
+                        
+                        <div class="activity-breakdown bg-green-900 p-3 rounded mb-4">
+                            <h3 class="font-semibold mb-2">📊 Activity Breakdown</h3>
+                            <p><strong>Screenshots:</strong> ${llmHistory.activity_breakdown.screenshots_taken}</p>
+                            <p><strong>Speech Sessions:</strong> ${llmHistory.activity_breakdown.speech_sessions}</p>
+                            <p><strong>Text Inputs:</strong> ${llmHistory.activity_breakdown.text_inputs}</p>
+                            <p><strong>Skills Used:</strong> ${llmHistory.activity_breakdown.skills_used.join(', ') || 'None'}</p>
+                            <p><strong>Window Switches:</strong> ${llmHistory.activity_breakdown.window_switches}</p>
+                        </div>
+                        
+                        <div class="llm-context bg-purple-900 p-3 rounded mb-4">
+                            <h3 class="font-semibold mb-2">🤖 LLM Context</h3>
+                            <p><strong>User Workflow:</strong> ${llmHistory.llm_context.user_workflow}</p>
+                            <p><strong>Primary Activities:</strong> ${llmHistory.llm_context.primary_activities.join(', ')}</p>
+                            <p><strong>Session Focus:</strong> ${llmHistory.llm_context.session_focus}</p>
+                            <p><strong>Current Context:</strong> ${llmHistory.llm_context.current_context}</p>
+                        </div>
+                        
+                        <div class="recent-activities bg-yellow-900 p-3 rounded mb-4">
+                            <h3 class="font-semibold mb-2">🕒 Recent Activities</h3>
+                            ${llmHistory.recent_activities.map(activity => 
+                                `<div class="activity-item mb-2">
+                                    <span class="text-gray-300">[${activity.time}]</span>
+                                    <span class="text-blue-300">${activity.action}</span>
+                                    <span class="text-white">- ${activity.summary}</span>
+                                </div>`
+                            ).join('')}
+                        </div>
+                        
+                        <div class="detailed-timeline">
+                            <h3 class="font-semibold mb-2">📝 Detailed Timeline</h3>
+                            <div class="timeline-content max-h-96 overflow-y-auto">
+                                ${formattedHistory}
+                            </div>
+                        </div>
+                        
+                        <div class="llm-structured-data bg-gray-700 p-3 rounded mt-4">
+                            <h3 class="font-semibold mb-2">🔧 LLM Structured Data (JSON)</h3>
+                            <details>
+                                <summary class="cursor-pointer text-blue-300">Click to view structured data for LLM consumption</summary>
+                                <pre class="text-xs mt-2 overflow-x-auto">${JSON.stringify(llmHistory, null, 2)}</pre>
+                            </details>
+                        </div>
+                    </div>
+                `
+                
+                // Show in a modal or overlay
+                const modal = document.createElement('div')
+                modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50'
+                modal.innerHTML = `
+                    <div class="bg-gray-900 text-white p-6 rounded-lg max-w-4xl max-h-screen overflow-y-auto">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-xl font-bold">Session History</h2>
+                            <button class="text-gray-400 hover:text-white" onclick="this.closest('.fixed').remove()">✕</button>
+                        </div>
+                        ${displayContent}
+                        <div class="mt-4 text-center">
+                            <button class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded mr-2" onclick="clearSessionMemory()">Clear Memory</button>
+                            <button class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded" onclick="this.closest('.fixed').remove()">Close</button>
+                        </div>
+                    </div>
+                `
+                
+                document.body.appendChild(modal)
+                
+            } catch (error) {
+                console.error('Error showing session history:', error)
+                alert('Error loading session history')
+            }
+        }
+
+        async function clearSessionMemory() {
+            try {
+                const result = await window.electronAPI.clearSessionMemory()
+                if (result.success) {
+                    alert('Session memory cleared successfully!')
+                    // Close the modal if it's open
+                    const modal = document.querySelector('.fixed')
+                    if (modal) modal.remove()
+                }
+            } catch (error) {
+                console.error('Error clearing session memory:', error)
+                alert('Error clearing session memory')
+            }
+        }
+
+        // Listen for OCR completion
+        window.electronAPI.onOcrCompleted((event, data) => {
+            console.log('OCR completed in chat:', data.text)
+            const ocrText = data.text
+            if (ocrText && ocrText.trim()) {
+                // Add OCR text to chat
+                addMessage('OCR Result', ocrText, 'ocr')
+            }
+        })
+
+        // Listen for OCR errors
+        window.electronAPI.onOcrError((event, data) => {
+            console.error('OCR error in chat:', data.error)
+            addMessage('OCR Error', data.error, 'error')
+        })
+
+        // Listen for session events
+        window.electronAPI.onSessionEvent((event, sessionEvent) => {
+            console.log('Session event in chat:', sessionEvent)
+        })
+
+        // Listen for session cleared
+        window.electronAPI.onSessionCleared(() => {
+            console.log('Session memory cleared in chat')
+        })
     </script>
 </body>
 </html>
