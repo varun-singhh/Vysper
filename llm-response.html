@@ -405,8 +405,10 @@
 
         ipcRenderer.on('display-llm-response', (event, data) => {
             console.log('LLM Response window received data:', data);
-            console.log('Response length:', data.response ? data.response.length : 0);
-            console.log('Skill:', data.skill);
+            // Check both content and response properties for compatibility
+            const response = data.content || data.response;
+            console.log('Response length:', response ? response.length : 0);
+            console.log('Skill:', data.metadata?.skill || data.skill);
             console.log('Window size before display:', window.innerWidth, 'x', window.innerHeight);
             
             // Check if window is still small (compact size) and request expansion
@@ -414,7 +416,6 @@
                 console.log('Window appears to still be compact size, requesting expansion...');
                 
                 // Pre-calculate content metrics for initial sizing
-                const response = data.response;
                 if (response) {
                     const codeBlocks = extractCodeBlocks(response);
                     const contentMetrics = calculateContentMetrics(response, codeBlocks);
@@ -486,7 +487,12 @@
             const loadingElement = document.getElementById('loading');
             if (loadingElement) {
                 loadingElement.classList.add('hidden');
+                loadingElement.style.display = 'none'; // Force hide
+                console.log('Loading element hidden with both class and style');
+            } else {
+                console.warn('Loading element not found!');
             }
+            console.log('Loading state hidden');
         }
 
         function calculateContentMetrics(response, codeBlocks) {
@@ -528,12 +534,16 @@
                 console.log('Response content shown');
             }
 
-            // Parse the response
-            const response = data.response;
+            // Parse the response - check both content and response properties for compatibility
+            const response = data.content || data.response;
             console.log('Response to parse:', response ? response.substring(0, 200) + '...' : 'No response');
             
             if (!response) {
-                console.error('No response data received');
+                console.error('No response data received', {
+                    dataKeys: Object.keys(data),
+                    hasContent: !!data.content,
+                    hasResponse: !!data.response
+                });
                 return;
             }
             

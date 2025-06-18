@@ -298,6 +298,13 @@ class ApplicationController {
         sessionHistory.recent
       );
 
+      logger.info('LLM processing completed, showing response', {
+        responseLength: llmResult.response.length,
+        skill: this.activeSkill,
+        processingTime: llmResult.metadata.processingTime,
+        responsePreview: llmResult.response.substring(0, 200) + '...'
+      });
+
       windowManager.showLLMResponse(llmResult.response, {
         skill: this.activeSkill,
         processingTime: llmResult.metadata.processingTime,
@@ -344,10 +351,20 @@ class ApplicationController {
   }
 
   broadcastLLMSuccess(llmResult) {
-    windowManager.broadcastToAllWindows('llm-response', {
+    const broadcastData = {
       response: llmResult.response,
-      metadata: llmResult.metadata
+      metadata: llmResult.metadata,
+      skill: this.activeSkill // Add the current active skill to the top level
+    };
+    
+    logger.info('Broadcasting LLM success to all windows', {
+      responseLength: llmResult.response.length,
+      skill: this.activeSkill,
+      dataKeys: Object.keys(broadcastData),
+      responsePreview: llmResult.response.substring(0, 100) + '...'
     });
+    
+    windowManager.broadcastToAllWindows('llm-response', broadcastData);
   }
 
   broadcastLLMError(errorMessage) {

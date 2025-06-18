@@ -107,11 +107,26 @@ class MainWindowUI {
     }
 
     handleLLMResponse(data) {
+        const skill = data.skill || data.metadata?.skill || 'General';
+        const skillNames = {
+            'dsa': 'DSA',
+            'behavioral': 'Behavioral', 
+            'sales': 'Sales',
+            'presentation': 'Presentation',
+            'data-science': 'Data Science',
+            'programming': 'Programming',
+            'devops': 'DevOps',
+            'system-design': 'System Design',
+            'negotiation': 'Negotiation'
+        };
+        
+        const displaySkill = skillNames[skill] || skill.toUpperCase();
+        
         logger.info('LLM response received', {
             component: 'MainWindowUI',
-            skill: data.skill || 'General'
+            skill: skill,
+            displaySkill: displaySkill
         });
-        this.showNotification(`LLM Analysis Complete - ${data.skill || 'General'}`, 'success');
     }
 
     handleLLMError(data) {
@@ -119,7 +134,6 @@ class MainWindowUI {
             component: 'MainWindowUI',
             error: data.error
         });
-        this.showNotification(`LLM Error: ${data.error}`, 'error');
     }
 
     setupKeyboardShortcuts() {

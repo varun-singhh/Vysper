@@ -554,6 +554,8 @@ class WindowManager {
     logger.debug('Showing and focusing LLM window');
     llmWindow.show();
     llmWindow.focus();
+
+    logger.debug(content);
     
     logger.info('LLM response displayed', {
       contentLength: content.length,
@@ -650,15 +652,29 @@ class WindowManager {
   }
 
   broadcastToAllWindows(channel, data) {
+    const windowStates = {};
+    
     this.windows.forEach((window, type) => {
       if (!window.isDestroyed()) {
         window.webContents.send(channel, data);
+        windowStates[type] = {
+          isVisible: window.isVisible(),
+          isDestroyed: window.isDestroyed(),
+          hasWebContents: !!window.webContents
+        };
+      } else {
+        windowStates[type] = { isDestroyed: true };
       }
     });
     
-    logger.debug('Broadcast sent to all windows', { 
+    logger.info('Broadcast sent to all windows', { 
       channel, 
-      windowCount: this.windows.size 
+      windowCount: this.windows.size,
+      windowStates,
+      dataKeys: data ? Object.keys(data) : [],
+      // Fixed: Check for 'content' instead of 'response' to match actual data structure
+      dataPreview: data && data.content ? data.content.substring(0, 50) + '...' : 
+                   data && data.response ? data.response.substring(0, 50) + '...' : 'No response'
     });
   }
 
