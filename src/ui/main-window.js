@@ -10,28 +10,193 @@ class MainWindowUI {
     constructor() {
         this.isInteractive = false;
         this.isHidden = false;
-        this.currentSkill = 'dsa';
+        this.currentSkill = 'dsa'; // Default, will be updated from settings
         this.statusDot = null;
         this.skillIndicator = null;
+        this.micButton = null;
+        this.isRecording = false;
+        
+        // Define available skills for navigation
+        this.availableSkills = [
+            'programming',
+            'dsa', 
+            'system-design',
+            'behavioral',
+            'data-science',
+            'sales',
+            'presentation',
+            'negotiation',
+            'devops'
+        ];
         
         this.init();
     }
 
-    init() {
+    async init() {
         try {
             this.setupElements();
             this.setupEventListeners();
+            
+            // Load current skill from settings
+            await this.loadCurrentSkill();
+            
+            // Load current interaction state
+            await this.loadCurrentInteractionState();
+            
             this.updateSkillIndicator();
+            this.updateAllElementStates(); // Update all elements with current state
             this.resizeWindowToContent();
             
             logger.info('Main window UI initialized', {
                 component: 'MainWindowUI',
-                skill: this.currentSkill
+                skill: this.currentSkill,
+                interactive: this.isInteractive
             });
         } catch (error) {
             logger.error('Failed to initialize main window UI', {
                 component: 'MainWindowUI',
                 error: error.message
+            });
+        }
+    }
+
+    async loadCurrentSkill() {
+        try {
+            if (window.electronAPI && window.electronAPI.getSettings) {
+                const settings = await window.electronAPI.getSettings();
+                if (settings && settings.activeSkill) {
+                    this.currentSkill = settings.activeSkill;
+                    logger.debug('Loaded current skill from settings', {
+                        component: 'MainWindowUI',
+                        skill: this.currentSkill
+                    });
+                }
+            }
+        } catch (error) {
+            logger.warn('Failed to load current skill from settings', {
+                component: 'MainWindowUI',
+                error: error.message
+            });
+        }
+    }
+
+    async loadCurrentInteractionState() {
+        try {
+            // Request current interaction state from main process
+            if (window.electronAPI && window.electronAPI.getWindowStats) {
+                const stats = await window.electronAPI.getWindowStats();
+                if (stats && typeof stats.isInteractive === 'boolean') {
+                    this.isInteractive = stats.isInteractive;
+                    logger.debug('Loaded current interaction state', {
+                        component: 'MainWindowUI',
+                        interactive: this.isInteractive
+                    });
+                }
+            }
+        } catch (error) {
+            // If we can't get the state, assume non-interactive (safer default)
+            this.isInteractive = false;
+            logger.warn('Failed to load current interaction state, defaulting to non-interactive', {
+                component: 'MainWindowUI',
+                error: error.message
+            });
+        }
+    }
+
+    updateAllElementStates() {
+        // Update all interactive elements with current state
+        this.updateStatusDot();
+        this.updateSkillIndicatorState();
+        this.updateMicButtonState();
+        this.updateSettingsIndicatorState();
+    }
+
+    updateStatusDot() {
+        if (this.statusDot) {
+            logger.debug('Updating status dot', {
+                component: 'MainWindowUI',
+                isInteractive: this.isInteractive,
+                currentClasses: this.statusDot.className
+            });
+            
+            // Remove both classes first
+            this.statusDot.classList.remove('interactive', 'non-interactive');
+            
+            // Add the appropriate class
+            if (this.isInteractive) {
+                this.statusDot.classList.add('interactive');
+            } else {
+                this.statusDot.classList.add('non-interactive');
+            }
+            
+            logger.debug('Status dot updated', {
+                component: 'MainWindowUI',
+                interactive: this.isInteractive,
+                newClasses: this.statusDot.className
+            });
+        } else {
+            logger.error('Status dot element not found');
+        }
+    }
+
+    updateSkillIndicatorState() {
+        if (this.skillIndicator) {
+            // Remove both classes first
+            this.skillIndicator.classList.remove('interactive', 'non-interactive');
+            
+            // Add the appropriate class
+            if (this.isInteractive) {
+                this.skillIndicator.classList.add('interactive');
+            } else {
+                this.skillIndicator.classList.add('non-interactive');
+            }
+            
+            logger.debug('Skill indicator state updated', {
+                component: 'MainWindowUI',
+                interactive: this.isInteractive,
+                classes: this.skillIndicator.className
+            });
+        }
+    }
+
+    updateMicButtonState() {
+        if (this.micButton) {
+            // Remove both classes first
+            this.micButton.classList.remove('interactive', 'non-interactive');
+            
+            // Add the appropriate class
+            if (this.isInteractive) {
+                this.micButton.classList.add('interactive');
+            } else {
+                this.micButton.classList.add('non-interactive');
+            }
+            
+            // Update button state
+            this.micButton.disabled = !this.isInteractive;
+            
+            logger.debug('Mic button state updated', {
+                component: 'MainWindowUI',
+                interactive: this.isInteractive,
+                disabled: !this.isInteractive
+            });
+        }
+    }
+
+    updateSettingsIndicatorState() {
+        if (this.settingsIndicator) {
+            // Remove both classes first
+            this.settingsIndicator.classList.remove('interactive', 'non-interactive');
+            
+            // Add the appropriate class
+            if (this.isInteractive) {
+                this.settingsIndicator.classList.add('interactive');
+            } else {
+                this.settingsIndicator.classList.add('non-interactive');
+            }
+            
+            logger.debug('Settings indicator state updated', {
+                component: 'MainWindowUI',
+                interactive: this.isInteractive
             });
         }
     }
@@ -60,42 +225,77 @@ class MainWindowUI {
         this.statusDot = document.getElementById('statusDot');
         this.skillIndicator = document.getElementById('skillIndicator');
         this.settingsIndicator = document.getElementById('settingsIndicator');
+        this.micButton = document.getElementById('micButton');
         
-        if (!this.statusDot || !this.skillIndicator || !this.settingsIndicator) {
+        if (!this.statusDot || !this.skillIndicator || !this.settingsIndicator || !this.micButton) {
             throw new Error('Required UI elements not found');
         }
 
         // Add click handler for settings
         this.settingsIndicator.addEventListener('click', () => {
-            console.log('Settings clicked!');
-            this.openSettings();
+            if (this.isInteractive) {
+                this.showSettingsMenu();
+            }
         });
-        
-        console.log('Settings click handler attached to:', this.settingsIndicator);
+
+        // Add click handler for microphone
+        this.micButton.addEventListener('click', () => {
+            if (this.isInteractive) {
+                if (this.isRecording) {
+                    window.electronAPI.stopSpeechRecognition();
+                } else {
+                    window.electronAPI.startSpeechRecognition();
+                }
+            }
+        });
     }
 
     setupEventListeners() {
-        // Set up event listeners using electronAPI from preload
         if (window.electronAPI) {
-            // Skill change handlers
-            window.electronAPI.onSkillChanged((event, data) => this.handleSkillChanged(data));
-            
-            // LLM handlers
-            window.electronAPI.onLlmResponse((event, data) => this.handleLLMResponse(data));
-            window.electronAPI.onLlmError((event, data) => this.handleLLMError(data));
+            // Fix interaction mode change listener
+            window.electronAPI.onInteractionModeChanged((event, interactive) => {
+                logger.debug('Interaction mode changed received:', interactive);
+                this.handleInteractionModeChanged(interactive);
+            });
+
+            window.electronAPI.onRecordingStarted(() => {
+                this.handleRecordingStarted();
+            });
+
+            window.electronAPI.onRecordingStopped(() => {
+                this.handleRecordingStopped();
+            });
+
+            window.electronAPI.onSkillChanged((event, data) => {
+                if (data && data.skill) {
+                    this.handleSkillChanged(data);
+                }
+            });
+
+            // Global keyboard shortcuts
+            document.addEventListener('keydown', (e) => {
+                if (e.altKey && e.key === 'r' && this.isInteractive) {
+                    e.preventDefault();
+                    if (this.isRecording) {
+                        window.electronAPI.stopSpeechRecognition();
+                    } else {
+                        window.electronAPI.startSpeechRecognition();
+                    }
+                }
+            });
         }
         
-        // IPC event listeners
-        window.addEventListener('message', (event) => {
-            if (event.data.type === 'set-interactive') {
-                this.handleInteractionModeChanged(event.data.interactive);
-            }
-        });
-        
-        // Use the electron IPC directly for the 'set-interactive' event
-        if (window.electronAPI && window.electronAPI.onInteractionModeChanged) {
-            window.electronAPI.onInteractionModeChanged((event, interactive) => {
+        // Also listen via the api interface for backup
+        if (window.api) {
+            window.api.receive('interaction-mode-changed', (interactive) => {
+                logger.debug('Interaction mode changed via api:', interactive);
                 this.handleInteractionModeChanged(interactive);
+            });
+            
+            window.api.receive('skill-updated', (data) => {
+                if (data && data.skill) {
+                    this.handleSkillChanged(data);
+                }
             });
         }
         
@@ -145,49 +345,52 @@ class MainWindowUI {
                 }
             }
             
+            // Skill navigation shortcuts - only work in interactive mode
+            if (this.isInteractive && e.metaKey) {
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    this.navigateSkill(-1); // Previous skill
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    this.navigateSkill(1); // Next skill
+                }
+            }
+            
             // Alt+A is handled globally by the main process
             // No need to handle it here since it needs to work even when windows are non-interactive
         });
     }
 
-    handleInteractionEnabled() {
-        this.isInteractive = true;
-        this.statusDot.className = 'status-dot interactive';
-        this.skillIndicator.classList.remove('non-interactive');
-        
-        logger.debug('Interaction mode enabled', { component: 'MainWindowUI' });
-    }
-
-    handleInteractionDisabled() {
-        this.isInteractive = false;
-        this.statusDot.className = 'status-dot non-interactive';
-        this.skillIndicator.classList.add('non-interactive');
-        
-        logger.debug('Interaction mode disabled', { component: 'MainWindowUI' });
-    }
-
     handleInteractionModeChanged(interactive) {
+        logger.info('Handling interaction mode change', {
+            component: 'MainWindowUI',
+            newState: interactive,
+            previousState: this.isInteractive
+        });
+        
+        // Update the internal state
         this.isInteractive = interactive;
         
-        if (interactive) {
-            this.handleInteractionEnabled();
-        } else {
-            this.handleInteractionDisabled();
-        }
+        // Update all UI elements to reflect the new state
+        this.updateAllElementStates();
         
-        logger.info('Interaction mode changed via IPC', {
+        // Update skill indicator tooltip
+        this.updateSkillIndicator();
+        
+        logger.info('Interaction mode change completed', {
             component: 'MainWindowUI',
-            interactive
+            interactive: this.isInteractive,
+            statusDotClass: this.statusDot ? this.statusDot.className : 'not found',
+            skillIndicatorClass: this.skillIndicator ? this.skillIndicator.className : 'not found'
         });
     }
 
     handleSkillChanged(data) {
         this.currentSkill = data.skill;
         this.updateSkillIndicator();
-        
         logger.info('Skill changed', {
             component: 'MainWindowUI',
-            skill: this.currentSkill
+            skill: data.skill
         });
     }
 
@@ -206,10 +409,18 @@ class MainWindowUI {
     }
 
     handleRecordingStarted() {
+        this.isRecording = true;
+        if (this.micButton) {
+            this.micButton.classList.add('recording');
+        }
         logger.debug('Recording started', { component: 'MainWindowUI' });
     }
 
     handleRecordingStopped() {
+        this.isRecording = false;
+        if (this.micButton) {
+            this.micButton.classList.remove('recording');
+        }
         logger.debug('Recording stopped', { component: 'MainWindowUI' });
     }
 
@@ -226,6 +437,8 @@ class MainWindowUI {
             'negotiation': 'Negotiation'
         };
         
+        if (!this.skillIndicator) return;
+        
         const skillName = skillNames[this.currentSkill] || this.currentSkill.toUpperCase();
         const skillSpan = this.skillIndicator.querySelector('span');
         
@@ -239,16 +452,118 @@ class MainWindowUI {
             
             // Add visual feedback for skill change
             this.animateSkillChange();
+            
+            logger.debug('Skill indicator updated', {
+                component: 'MainWindowUI',
+                skill: skillName,
+                interactive: this.isInteractive
+            });
         }
     }
 
     animateSkillChange() {
-        this.skillIndicator.style.transform = 'scale(1.1)';
-        this.skillIndicator.style.transition = 'transform 0.2s ease';
+        if (this.skillIndicator) {
+            this.skillIndicator.style.transform = 'scale(1.1)';
+            this.skillIndicator.style.transition = 'transform 0.2s ease';
+            
+            setTimeout(() => {
+                this.skillIndicator.style.transform = 'scale(1)';
+            }, 200);
+        }
+    }
+
+    navigateSkill(direction) {
+        if (!this.isInteractive) return;
         
+        const currentIndex = this.availableSkills.indexOf(this.currentSkill);
+        if (currentIndex === -1) return;
+        
+        // Calculate new index with wrapping
+        let newIndex = currentIndex + direction;
+        if (newIndex >= this.availableSkills.length) {
+            newIndex = 0; // Wrap to beginning
+        } else if (newIndex < 0) {
+            newIndex = this.availableSkills.length - 1; // Wrap to end
+        }
+        
+        const newSkill = this.availableSkills[newIndex];
+        
+        // Update skill locally and notify main process
+        this.currentSkill = newSkill;
+        this.updateSkillIndicator();
+        
+        // Save the skill change via IPC
+        if (window.electronAPI && window.electronAPI.updateActiveSkill) {
+            window.electronAPI.updateActiveSkill(newSkill).then(() => {
+                logger.info('Skill navigation completed', {
+                    component: 'MainWindowUI',
+                    newSkill,
+                    direction: direction > 0 ? 'down' : 'up'
+                });
+            }).catch(error => {
+                logger.error('Failed to update skill via navigation', {
+                    component: 'MainWindowUI',
+                    error: error.message
+                });
+            });
+        }
+        
+        // Show visual feedback
+        this.showSkillChangeNotification(newSkill, direction);
+    }
+
+    showSkillChangeNotification(skill, direction) {
+        const skillNames = {
+            'dsa': 'DSA',
+            'behavioral': 'Behavioral', 
+            'sales': 'Sales',
+            'presentation': 'Presentation',
+            'data-science': 'Data Science',
+            'programming': 'Programming',
+            'devops': 'DevOps',
+            'system-design': 'System Design',
+            'negotiation': 'Negotiation'
+        };
+        
+        const displayName = skillNames[skill] || skill.toUpperCase();
+        const arrow = direction > 0 ? '↓' : '↑';
+        
+        // Create temporary notification
+        const notification = document.createElement('div');
+        notification.className = 'skill-change-notification';
+        notification.innerHTML = `${arrow} ${displayName}`;
+        notification.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 1000;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        `;
+        
+        document.body.appendChild(notification);
+        
+        // Animate in
         setTimeout(() => {
-            this.skillIndicator.style.transform = 'scale(1)';
-        }, 200);
+            notification.style.opacity = '1';
+        }, 10);
+        
+        // Remove after 1 second
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 200);
+        }, 1000);
     }
 
     showHiddenIndicator() {
@@ -263,13 +578,7 @@ class MainWindowUI {
 
     toggleInteractiveMode() {
         this.isInteractive = !this.isInteractive;
-        this.statusDot.className = `status-dot ${this.isInteractive ? 'interactive' : 'non-interactive'}`;
-        
-        if (this.isInteractive) {
-            this.skillIndicator.classList.remove('non-interactive');
-        } else {
-            this.skillIndicator.classList.add('non-interactive');
-        }
+        this.updateAllElementStates();
         
         logger.debug('Interactive mode toggled', {
             component: 'MainWindowUI',
@@ -417,43 +726,116 @@ class MainWindowUI {
         document.addEventListener('keydown', (e) => {
             // Cmd+, or Ctrl+, for settings
             if ((e.metaKey || e.ctrlKey) && e.key === ',') {
-                console.log('Settings keyboard shortcut pressed!');
+                logger.debug('Settings keyboard shortcut pressed');
                 e.preventDefault();
                 this.openSettings();
             }
         });
-        console.log('Settings keyboard shortcut handler attached');
     }
 
     openSettings() {
-        console.log('openSettings called');
         try {
-            console.log('window.electronAPI:', window.electronAPI);
             if (window.electronAPI && window.electronAPI.showSettings) {
                 window.electronAPI.showSettings();
-                console.log('showSettings called successfully');
             } else {
-                console.error('electronAPI or showSettings not available');
+                logger.error('electronAPI or showSettings not available');
                 return;
             }
             
             // Add visual feedback
-            this.settingsIndicator.style.transform = 'scale(1.1)';
-            this.settingsIndicator.style.transition = 'transform 0.2s ease';
-            
-            setTimeout(() => {
-                this.settingsIndicator.style.transform = 'scale(1)';
-            }, 200);
+            if (this.settingsIndicator) {
+                this.settingsIndicator.style.transform = 'scale(1.1)';
+                this.settingsIndicator.style.transition = 'transform 0.2s ease';
+                
+                setTimeout(() => {
+                    this.settingsIndicator.style.transform = 'scale(1)';
+                }, 200);
+            }
             
             logger.info('Settings window opened', { component: 'MainWindowUI' });
         } catch (error) {
-            console.error('Error opening settings:', error);
             logger.error('Failed to open settings', {
                 component: 'MainWindowUI',
                 error: error.message
             });
             this.showNotification('Failed to open settings', 'error');
         }
+    }
+
+    showSettingsMenu() {
+        const menu = document.createElement('div');
+        menu.className = 'settings-menu';
+        menu.style.cssText = `
+            position: absolute;
+            right: 10px;
+            top: 35px;
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(20px);
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 8px 0;
+            min-width: 150px;
+            z-index: 1000;
+        `;
+
+        const settingsOption = this.createMenuItem('Settings', 'fa-cog', () => {
+            this.openSettings();
+            document.body.removeChild(menu);
+        });
+
+        const quitOption = this.createMenuItem('Quit Wysper', 'fa-power-off', () => {
+            if (window.electronAPI) {
+                window.electronAPI.quitApp();
+            }
+        });
+
+        menu.appendChild(settingsOption);
+        menu.appendChild(this.createMenuSeparator());
+        menu.appendChild(quitOption);
+
+        // Add click outside listener to close menu
+        const closeMenu = (e) => {
+            if (!menu.contains(e.target) && !this.settingsIndicator.contains(e.target)) {
+                document.body.removeChild(menu);
+                document.removeEventListener('click', closeMenu);
+            }
+        };
+        document.addEventListener('click', closeMenu);
+
+        document.body.appendChild(menu);
+    }
+
+    createMenuItem(text, iconClass, onClick) {
+        const item = document.createElement('div');
+        item.style.cssText = `
+            padding: 8px 16px;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        `;
+        item.innerHTML = `<i class="fas ${iconClass}"></i>${text}`;
+        item.addEventListener('mouseover', () => {
+            item.style.background = 'rgba(255, 255, 255, 0.1)';
+        });
+        item.addEventListener('mouseout', () => {
+            item.style.background = 'transparent';
+        });
+        item.addEventListener('click', onClick);
+        return item;
+    }
+
+    createMenuSeparator() {
+        const separator = document.createElement('div');
+        separator.style.cssText = `
+            height: 1px;
+            background: rgba(255, 255, 255, 0.1);
+            margin: 8px 0;
+        `;
+        return separator;
     }
 }
 
@@ -465,4 +847,4 @@ if (typeof document !== 'undefined') {
     });
 }
 
-module.exports = MainWindowUI; 
+module.exports = MainWindowUI;

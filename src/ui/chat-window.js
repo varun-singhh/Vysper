@@ -1,16 +1,9 @@
-const logger = require('../core/logger');
+const logger = require('../core/logger').createServiceLogger('CHAT-UI');
 
 class ChatWindowUI {
     constructor() {
         this.isRecording = false;
-        this.isInteractive = false;
-        this.recognizer = null;
-        this.speechConfig = null;
-        this.audioConfig = null;
-        this.currentTranscription = '';
-        this.transcriptionTimeout = null;
-        this.lastTranscriptionTime = 0;
-        
+        this.isInteractive = true; // Start in interactive mode
         this.elements = {};
         
         this.init();
@@ -20,14 +13,12 @@ class ChatWindowUI {
         try {
             this.setupElements();
             this.setupEventListeners();
-            this.initializeSpeechServices();
+            this.addMessage('Chat window initialized. Click microphone or press ⌘+R to start recording.', 'system');
             
-            logger.info('Chat window UI initialized', { component: 'ChatWindowUI' });
+            logger.info('Chat window UI initialized successfully');
         } catch (error) {
-            logger.error('Failed to initialize chat window UI', {
-                component: 'ChatWindowUI',
-                error: error.message
-            });
+            logger.error('Failed to initialize chat window UI', { error: error.message });
+            console.error('Chat window initialization failed:', error);
         }
     }
 
@@ -53,93 +44,98 @@ class ChatWindowUI {
     }
 
     setupEventListeners() {
-        const { ipcRenderer } = require('electron');
-        
         // Interaction state handlers
-        ipcRenderer.on('interaction-enabled', () => this.handleInteractionEnabled());
-        ipcRenderer.on('interaction-disabled', () => this.handleInteractionDisabled());
-        
-        // Speech recognition handlers
-        ipcRenderer.on('recording-started', () => this.handleRecordingStarted());
-        ipcRenderer.on('recording-stopped', () => this.handleRecordingStopped());
-        ipcRenderer.on('transcription', (event, text) => this.handleTranscription(text));
-        ipcRenderer.on('interim-transcription', (event, text) => this.handleInterimTranscription(text));
-        ipcRenderer.on('status', (event, message) => this.addMessage(message, 'system'));
-        ipcRenderer.on('error', (event, error) => this.addMessage(`Error: ${error}`, 'error'));
-        
-        // Skill and session handlers
-        this.setupSkillHandlers(ipcRenderer);
-        this.setupSessionHandlers();
+        if (window.electronAPI) {
+            window.electronAPI.onInteractionModeChanged((event, interactive) => {
+                this.isInteractive = interactive;
+                if (interactive) {
+                    this.handleInteractionEnabled();
+                } else {
+                    this.handleInteractionDisabled();
+                }
+            });
+            
+            // Speech recognition handlers
+            window.electronAPI.onTranscriptionReceived((event, data) => {
+                if (data && data.text) {
+                    this.handleTranscription(data.text);
+                }
+            });
+            
+            window.electronAPI.onSpeechStatus((event, data) => {
+                if (data && data.status) {
+                    this.addMessage(data.status, 'system');
+                    
+                    // Update recording state based on status
+                    if (data.status.includes('started') || data.status.includes('Recording')) {
+                        this.handleRecordingStarted();
+                    } else if (data.status.includes('stopped') || data.status.includes('ended')) {
+                        this.handleRecordingStopped();
+                    }
+                }
+            });
+            
+            window.electronAPI.onSpeechError((event, data) => {
+                if (data && data.error) {
+                    this.addMessage(`Speech Error: ${data.error}`, 'error');
+                    this.handleRecordingStopped(); // Stop recording on error
+                }
+            });
+            
+            // Skill handlers
+            window.electronAPI.onSkillChanged((event, data) => {
+                if (data && data.skill) {
+                    this.handleSkillActivated(data.skill);
+                }
+            });
+            
+            // Session handlers
+            window.electronAPI.onSessionCleared(() => {
+                this.addMessage('Session memory has been cleared', 'system');
+            });
+            
+            window.electronAPI.onOcrCompleted((event, data) => {
+                if (data.text && data.text.trim()) {
+                    this.addMessage(`📷 OCR Result: ${data.text}`, 'transcription');
+                }
+            });
+            
+            window.electronAPI.onOcrError((event, data) => {
+                this.addMessage(`OCR Error: ${data.error}`, 'error');
+            });
+            
+            window.electronAPI.onLlmResponse((event, data) => {
+                this.addMessage(`🤖 LLM Response: ${data.response}`, 'system');
+            });
+            
+            window.electronAPI.onLlmError((event, data) => {
+                this.addMessage(`LLM Error: ${data.error}`, 'error');
+            });
+        }
         
         // UI event handlers
         this.setupUIHandlers();
-    }
-
-    setupSkillHandlers(ipcRenderer) {
-        ipcRenderer.on('skill-activated', (event, skillName) => {
-            this.handleSkillActivated(skillName);
-        });
         
-        ipcRenderer.on('controls-changed', (event, inChat) => {
-            // No visual feedback needed for controls movement
-        });
-    }
-
-    setupSessionHandlers() {
-        window.electronAPI.onSessionEvent((event, sessionEvent) => {
-            logger.debug('Session event received in chat', {
-                component: 'ChatWindowUI',
-                event: sessionEvent
-            });
-        });
-
-        window.electronAPI.onSessionCleared(() => {
-            logger.info('Session memory cleared in chat', { component: 'ChatWindowUI' });
-            this.addMessage('Session memory has been cleared', 'system');
-        });
-
-        window.electronAPI.onOcrCompleted((event, data) => {
-            logger.debug('OCR completed in chat', {
-                component: 'ChatWindowUI',
-                textLength: data.text?.length || 0
-            });
-            if (data.text && data.text.trim()) {
-                this.addMessage(`📷 OCR Result: ${data.text}`, 'transcription');
-            }
-        });
-
-        window.electronAPI.onOcrError((event, data) => {
-            logger.error('OCR error in chat', {
-                component: 'ChatWindowUI',
-                error: data.error
-            });
-            this.addMessage(`OCR Error: ${data.error}`, 'error');
-        });
-
-        window.electronAPI.onLlmResponse((event, data) => {
-            logger.info('LLM response received in chat', {
-                component: 'ChatWindowUI',
-                skill: data.skill || 'General'
-            });
-            this.addMessage(`🤖 LLM Analysis: ${data.response}`, 'system');
-        });
-
-        window.electronAPI.onLlmError((event, data) => {
-            logger.error('LLM error in chat', {
-                component: 'ChatWindowUI',
-                error: data.error
-            });
-            this.addMessage(`LLM Error: ${data.error}`, 'error');
-        });
+        logger.debug('Chat window event listeners set up');
     }
 
     setupUIHandlers() {
         // Microphone button
-        this.elements.micButton.addEventListener('click', () => {
-            if (this.isRecording) {
-                this.stopRecording();
-            } else {
-                this.startRecording();
+        this.elements.micButton.addEventListener('click', async () => {
+            if (!this.isInteractive) {
+                this.addMessage('Window is in non-interactive mode. Press Alt+A to enable interaction.', 'error');
+                return;
+            }
+            
+            try {
+                if (this.isRecording) {
+                    await window.electronAPI.stopSpeechRecognition();
+                } else {
+                    await window.electronAPI.startSpeechRecognition();
+                }
+            } catch (error) {
+                this.addMessage(`Speech recognition error: ${error.message}`, 'error');
+                logger.error('Speech recognition failed', { error: error.message });
             }
         });
         
@@ -154,343 +150,127 @@ class ChatWindowUI {
                 this.sendMessage();
             }
         });
-    }
-
-    async initializeSpeechServices() {
-        try {
-            if (typeof require !== 'undefined') {
-                const sdk = require('microsoft-cognitiveservices-speech-sdk');
-                
-                const subscriptionKey = process.env.AZURE_SPEECH_KEY;
-                const region = process.env.AZURE_SPEECH_REGION;
-                
-                if (!subscriptionKey || !region) {
-                    throw new Error('Azure Speech credentials not found. Please set AZURE_SPEECH_KEY and AZURE_SPEECH_REGION environment variables.');
-                }
-                
-                this.speechConfig = sdk.SpeechConfig.fromSubscription(subscriptionKey, region);
-                this.speechConfig.speechRecognitionLanguage = 'en-US';
-                this.speechConfig.enableDictation();
-                
-                this.addMessage('Azure Speech Services initialized successfully', 'system');
-                logger.info('Azure Speech Services initialized', { component: 'ChatWindowUI' });
-                return true;
-            } else {
-                throw new Error('Azure Speech SDK not available');
+        
+        // Global keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.altKey && e.key === 'r') {
+                e.preventDefault();
+                this.elements.micButton.click();
             }
-        } catch (error) {
-            this.addMessage(`Failed to initialize Azure Speech Services: ${error.message}`, 'error');
-            logger.error('Failed to initialize Azure Speech Services', {
-                component: 'ChatWindowUI',
-                error: error.message
-            });
-            return false;
-        }
+        });
     }
 
     handleInteractionEnabled() {
         this.isInteractive = true;
         this.elements.chatContainer.classList.remove('non-interactive');
         this.showInteractionIndicator('Interactive', true);
-        
-        logger.debug('Interaction mode enabled in chat', { component: 'ChatWindowUI' });
+        logger.debug('Interaction mode enabled in chat');
     }
 
     handleInteractionDisabled() {
         this.isInteractive = false;
         this.elements.chatContainer.classList.add('non-interactive');
         this.showInteractionIndicator('Non-Interactive', false);
-        
-        logger.debug('Interaction mode disabled in chat', { component: 'ChatWindowUI' });
+        logger.debug('Interaction mode disabled in chat');
     }
 
     handleRecordingStarted() {
-        if (!this.isRecording) {
-            this.startRecording();
+        this.isRecording = true;
+        if (this.elements.recordingIndicator) {
+            this.elements.recordingIndicator.style.display = 'block';
         }
+        if (this.elements.micButton) {
+            this.elements.micButton.classList.add('recording');
+        }
+        logger.debug('Recording started in chat window');
     }
 
     handleRecordingStopped() {
-        if (this.isRecording) {
-            this.stopRecording();
+        this.isRecording = false;
+        if (this.elements.recordingIndicator) {
+            this.elements.recordingIndicator.style.display = 'none';
         }
+        if (this.elements.micButton) {
+            this.elements.micButton.classList.remove('recording');
+        }
+        logger.debug('Recording stopped in chat window');
     }
 
     handleTranscription(text) {
         if (text && text.trim()) {
             this.addMessage(text, 'transcription');
+            logger.debug('Transcription received in chat', { textLength: text.length });
         }
-    }
-
-    handleInterimTranscription(text) {
-        logger.debug('Interim transcription received', {
-            component: 'ChatWindowUI',
-            text
-        });
     }
 
     handleSkillActivated(skillName) {
         const skillPrompts = {
-            'dsa': 'DSA Interview Mode: I\'ll help you practice data structures and algorithms. Ask me to explain concepts, solve problems, or review your solutions.',
-            'behavioral': 'Behavioral Interview Mode: I\'ll help you practice STAR method responses and behavioral questions. Share your experiences and I\'ll help you structure your answers.',
-            'sales': 'Sales Mode: I\'ll help you practice sales techniques, objection handling, and closing strategies. Role-play sales scenarios with me.',
-            'presentation': 'Presentation Mode: I\'ll help you practice public speaking and presentation skills. I can provide feedback on your delivery and content.',
-            'data-science': 'Data Science Mode: I\'ll help you with machine learning concepts, statistics, and data analysis. Ask me technical questions or discuss your projects.',
-            'programming': 'Programming Mode: I\'ll help you with coding best practices, debugging, and software development concepts.',
-            'devops': 'DevOps Mode: I\'ll help you with CI/CD, cloud infrastructure, and deployment strategies.',
-            'system-design': 'System Design Mode: I\'ll help you practice large-scale system architecture and design patterns.',
-            'negotiation': 'Negotiation Mode: I\'ll help you practice negotiation strategies and conflict resolution techniques.'
+            'dsa': '🧠 DSA Mode: Ready to practice data structures and algorithms!',
+            'behavioral': '💼 Behavioral Mode: Ready to practice behavioral interview questions!',
+            'sales': '💰 Sales Mode: Ready to practice sales techniques!',
+            'presentation': '🎤 Presentation Mode: Ready to practice public speaking!',
+            'data-science': '📊 Data Science Mode: Ready to discuss ML and analytics!',
+            'programming': '💻 Programming Mode: Ready to discuss coding best practices!',
+            'devops': '🚀 DevOps Mode: Ready to discuss CI/CD and infrastructure!',
+            'system-design': '🏗️ System Design Mode: Ready to architect large-scale systems!',
+            'negotiation': '🤝 Negotiation Mode: Ready to practice negotiation strategies!'
         };
         
-        const prompt = skillPrompts[skillName] || `Ready to help with ${skillName}! Start speaking or ask me questions.`;
+        const prompt = skillPrompts[skillName] || `🎯 ${skillName} Mode: Ready to help!`;
         this.addMessage(prompt, 'system');
         
-        logger.info('Skill activated in chat', {
-            component: 'ChatWindowUI',
-            skill: skillName
-        });
-    }
-
-    async startRecording() {
-        if (this.isRecording) {
-            logger.warn('Already recording', { component: 'ChatWindowUI' });
-            return;
-        }
-        
-        if (!this.speechConfig) {
-            const initialized = await this.initializeSpeechServices();
-            if (!initialized) {
-                return;
-            }
-        }
-        
-        try {
-            this.isRecording = true;
-            this.elements.recordingIndicator.style.display = 'block';
-            this.elements.micButton.classList.add('recording');
-            this.addMessage('Starting Azure Speech recognition...', 'system');
-            
-            this.resetTranscriptionState();
-            
-            const sdk = require('microsoft-cognitiveservices-speech-sdk');
-            this.audioConfig = sdk.AudioConfig.fromDefaultMicrophoneInput();
-            this.recognizer = new sdk.SpeechRecognizer(this.speechConfig, this.audioConfig);
-            
-            this.setupRecognizerHandlers(sdk);
-            
-            this.recognizer.startContinuousRecognitionAsync(
-                () => {
-                    logger.info('Azure Speech recognition started', { component: 'ChatWindowUI' });
-                    this.addMessage('Recording started - speak now!', 'system');
-                    const { ipcRenderer } = require('electron');
-                    ipcRenderer.send('recording-started');
-                },
-                (error) => {
-                    logger.error('Failed to start recognition', {
-                        component: 'ChatWindowUI',
-                        error
-                    });
-                    this.addMessage(`Failed to start recognition: ${error}`, 'error');
-                    this.resetRecordingState();
-                }
-            );
-            
-        } catch (error) {
-            logger.error('Failed to start recording', {
-                component: 'ChatWindowUI',
-                error: error.message
-            });
-            this.addMessage(`Failed to start recording: ${error.message}`, 'error');
-            this.resetRecordingState();
-        }
-    }
-
-    stopRecording() {
-        if (!this.isRecording) {
-            return;
-        }
-        
-        this.isRecording = false;
-        this.elements.recordingIndicator.style.display = 'none';
-        this.elements.micButton.classList.remove('recording');
-        this.addMessage('Stopping Azure Speech recognition...', 'system');
-        
-        this.finalizeTranscription();
-        
-        if (this.recognizer) {
-            this.recognizer.stopContinuousRecognitionAsync(
-                () => {
-                    logger.info('Azure Speech recognition stopped', { component: 'ChatWindowUI' });
-                    this.addMessage('Recording stopped', 'system');
-                    const { ipcRenderer } = require('electron');
-                    ipcRenderer.send('recording-stopped');
-                },
-                (error) => {
-                    logger.error('Error stopping recognition', {
-                        component: 'ChatWindowUI',
-                        error
-                    });
-                }
-            );
-            
-            this.cleanupRecognizer();
-        }
-    }
-
-    setupRecognizerHandlers(sdk) {
-        this.recognizer.recognizing = (s, e) => {
-            if (e.result.reason === sdk.ResultReason.RecognizingSpeech) {
-                logger.debug('Interim transcription', {
-                    component: 'ChatWindowUI',
-                    text: e.result.text
-                });
-                this.currentTranscription = e.result.text;
-            }
-        };
-        
-        this.recognizer.recognized = (s, e) => {
-            if (e.result.reason === sdk.ResultReason.RecognizedSpeech) {
-                logger.debug('Final transcription', {
-                    component: 'ChatWindowUI',
-                    text: e.result.text
-                });
-                if (e.result.text && e.result.text.trim()) {
-                    this.addMessage(e.result.text, 'transcription');
-                    const { ipcRenderer } = require('electron');
-                    ipcRenderer.send('transcription-received', e.result.text);
-                    this.currentTranscription = '';
-                }
-            } else if (e.result.reason === sdk.ResultReason.NoMatch) {
-                logger.debug('No speech detected', { component: 'ChatWindowUI' });
-                if (this.currentTranscription && this.currentTranscription.trim()) {
-                    this.addMessage(this.currentTranscription, 'transcription');
-                    const { ipcRenderer } = require('electron');
-                    ipcRenderer.send('transcription-received', this.currentTranscription);
-                    this.currentTranscription = '';
-                }
-            }
-        };
-        
-        this.recognizer.canceled = (s, e) => {
-            logger.warn('Recognition canceled', {
-                component: 'ChatWindowUI',
-                reason: e.reason
-            });
-            if (e.reason === sdk.CancellationReason.Error) {
-                logger.error('Recognition error', {
-                    component: 'ChatWindowUI',
-                    error: e.errorDetails
-                });
-                this.addMessage(`Recognition error: ${e.errorDetails}`, 'error');
-            }
-            this.stopRecording();
-        };
-        
-        this.recognizer.sessionStopped = (s, e) => {
-            logger.info('Recognition session stopped', { component: 'ChatWindowUI' });
-            this.stopRecording();
-        };
-    }
-
-    resetTranscriptionState() {
-        this.currentTranscription = '';
-        this.lastTranscriptionTime = 0;
-        if (this.transcriptionTimeout) {
-            clearTimeout(this.transcriptionTimeout);
-            this.transcriptionTimeout = null;
-        }
-    }
-
-    resetRecordingState() {
-        this.isRecording = false;
-        this.elements.recordingIndicator.style.display = 'none';
-        this.elements.micButton.classList.remove('recording');
-    }
-
-    finalizeTranscription() {
-        if (this.currentTranscription && this.currentTranscription.trim()) {
-            this.addMessage(this.currentTranscription, 'transcription');
-            this.currentTranscription = '';
-        }
-        
-        if (this.transcriptionTimeout) {
-            clearTimeout(this.transcriptionTimeout);
-            this.transcriptionTimeout = null;
-        }
-    }
-
-    cleanupRecognizer() {
-        if (this.recognizer) {
-            this.recognizer.close();
-            this.recognizer = null;
-        }
-        
-        if (this.audioConfig) {
-            this.audioConfig.close();
-            this.audioConfig = null;
-        }
+        logger.info('Skill activated in chat', { skill: skillName });
     }
 
     sendMessage() {
         const text = this.elements.messageInput.value.trim();
         if (text) {
-            this.addMessage(`${text}`, 'user');
-            const { ipcRenderer } = require('electron');
-            ipcRenderer.send('text-input', text);
+            this.addMessage(text, 'user');
             this.elements.messageInput.value = '';
-            
-            logger.debug('Message sent', {
-                component: 'ChatWindowUI',
-                messageLength: text.length
-            });
+            logger.debug('User message sent', { textLength: text.length });
         }
     }
 
     addMessage(text, type = 'user') {
-        const messagesContainer = this.elements.chatMessages;
-        const messageDiv = document.createElement('div');
+        if (!this.elements.chatMessages) return;
         
+        const messageDiv = document.createElement('div');
         messageDiv.className = `message ${type}`;
         
-        const now = new Date();
-        const timeString = now.toLocaleTimeString('en-US', { 
-            hour12: false, 
-            hour: '2-digit', 
-            minute: '2-digit', 
-            second: '2-digit' 
-        });
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'message-time';
+        timeDiv.textContent = new Date().toLocaleTimeString();
         
-        messageDiv.innerHTML = `
-            <div class="message-time">${timeString}</div>
-            <div class="message-text">${text}</div>
-        `;
+        const textDiv = document.createElement('div');
+        textDiv.className = 'message-text';
+        textDiv.textContent = text;
         
-        messagesContainer.appendChild(messageDiv);
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        messageDiv.appendChild(timeDiv);
+        messageDiv.appendChild(textDiv);
         
-        logger.debug('Message added to chat', {
-            component: 'ChatWindowUI',
-            type,
-            textLength: text.length
-        });
+        this.elements.chatMessages.appendChild(messageDiv);
+        
+        // Auto-scroll to bottom
+        this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
     }
 
     showInteractionIndicator(text, interactive) {
-        if (this.elements.interactionText) {
-            this.elements.interactionText.textContent = text;
-            this.elements.interactionIndicator.className = `interaction-indicator show ${interactive ? 'interactive' : 'non-interactive'}`;
-            
-            setTimeout(() => {
-                this.elements.interactionIndicator.classList.remove('show');
-            }, 2000);
-        }
+        if (!this.elements.interactionIndicator || !this.elements.interactionText) return;
+        
+        this.elements.interactionText.textContent = text;
+        this.elements.interactionIndicator.className = `interaction-indicator show ${interactive ? 'interactive' : 'non-interactive'}`;
+        
+        setTimeout(() => {
+            this.elements.interactionIndicator.classList.remove('show');
+        }, 2000);
     }
 }
 
-// Initialize when DOM is ready
-let chatWindowUI;
-document.addEventListener('DOMContentLoaded', () => {
-    chatWindowUI = new ChatWindowUI();
-});
-
-module.exports = ChatWindowUI; 
+// Initialize when DOM is loaded
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        new ChatWindowUI();
+    });
+} else {
+    new ChatWindowUI();
+} 

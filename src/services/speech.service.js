@@ -136,6 +136,9 @@ class SpeechService extends EventEmitter {
         logger.info('Continuous speech recognition started');
         this.emit('recording-started');
         this.emit('status', 'Recording started - speak now');
+        if (global.windowManager) {
+          global.windowManager.handleRecordingStarted();
+        }
       },
       (error) => {
         logger.error('Failed to start continuous recognition', { error });
@@ -163,6 +166,9 @@ class SpeechService extends EventEmitter {
           logger.info('Speech recognition stopped successfully');
           this.emit('recording-stopped');
           this.emit('status', 'Recording stopped');
+          if (global.windowManager) {
+            global.windowManager.handleRecordingStopped();
+          }
         },
         (error) => {
           logger.error('Error during recognition stop', { error });

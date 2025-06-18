@@ -1,321 +1,254 @@
-// Settings Window Management
-class SettingsWindow {
-  constructor() {
-    this.appIcons = {
-      'terminal': { 
-        name: 'Terminal', 
-        file: 'terminal.png',
-        description: 'Clean terminal interface',
-        appName: 'Terminal '
-      },
-      'activity': { 
-        name: 'Activity Monitor', 
-        file: 'activity.png',
-        description: 'System activity tracking',
-        appName: 'Activity Monitor '
-      },
-      'settings': { 
-        name: 'System Settings', 
-        file: 'settings.png',
-        description: 'Configuration and settings',
-        appName: 'System Settings '
-      }
-    };
-
-    this.currentSettings = {
-      codingLanguage: 'javascript',
-      activeSkill: 'dsa',
-      appIcon: 'terminal'
-    };
-
-    this.init();
-  }
-
-  async init() {
-    await this.loadCurrentSettings();
-    this.setupEventListeners();
-    this.populateIconGrid();
-    this.updateUI();
-  }
-
-  async loadCurrentSettings() {
-    try {
-      // Request current settings from main process
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        const settings = await window.electronAPI.getSettings();
-        if (settings) {
-          this.currentSettings = { ...this.currentSettings, ...settings };
-        }
-      }
-    } catch (error) {
-      console.log('Using default settings');
-    }
-  }
-
-  setupEventListeners() {
-    // Language selection - auto-save on change
-    const languageSelect = document.getElementById('codingLanguage');
-    languageSelect.addEventListener('change', async (e) => {
-      this.currentSettings.codingLanguage = e.target.value;
-      this.updateCurrentLanguageDisplay();
-      await this.autoSaveSetting('codingLanguage', e.target.value);
-    });
-
-    // Skill selection - auto-save on change
-    const skillSelect = document.getElementById('activeSkill');
-    skillSelect.addEventListener('change', async (e) => {
-      this.currentSettings.activeSkill = e.target.value;
-      this.updateCurrentSkillDisplay();
-      await this.autoSaveSetting('activeSkill', e.target.value);
-    });
-
-    // Hide save/cancel buttons since we're auto-saving
-    document.getElementById('saveBtn').style.display = 'none';
-    document.getElementById('cancelBtn').textContent = 'Close';
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('Settings window loaded');
     
-    // Close button
-    document.getElementById('cancelBtn').addEventListener('click', () => {
-      this.closeWindow();
+    // Get DOM elements
+    const closeButton = document.getElementById('closeButton');
+    const quitButton = document.getElementById('quitButton');
+    const azureKeyInput = document.getElementById('azureKey');
+    const azureRegionInput = document.getElementById('azureRegion');
+    const geminiKeyInput = document.getElementById('geminiKey');
+    const windowGapInput = document.getElementById('windowGap');
+    const codingLanguageSelect = document.getElementById('codingLanguage');
+    const activeSkillSelect = document.getElementById('activeSkill');
+    const iconGrid = document.getElementById('iconGrid');
+
+    // Check if window.api exists
+    if (!window.api) {
+        console.error('window.api not available');
+        return;
+    }
+
+    // Request current settings when window opens
+    const requestCurrentSettings = () => {
+        if (window.electronAPI && window.electronAPI.getSettings) {
+            window.electronAPI.getSettings().then(settings => {
+                console.log('Current settings received:', settings);
+                loadSettingsIntoUI(settings);
+            }).catch(error => {
+                console.error('Failed to get settings:', error);
+            });
+        }
+    };
+
+    // Close button handler
+    if (closeButton) {
+        closeButton.addEventListener('click', () => {
+            console.log('Close button clicked');
+            window.api.send('close-settings');
+        });
+    }
+
+    // Quit button handler with multiple attempts
+    if (quitButton) {
+        quitButton.addEventListener('click', () => {
+            console.log('Quit button clicked');
+            try {
+                // Try multiple ways to quit the app
+                if (window.api && window.api.send) {
+                    window.api.send('quit-app');
+                }
+                
+                // Also try the electron API if available
+                if (window.electronAPI && window.electronAPI.quit) {
+                    window.electronAPI.quit();
+                }
+                
+                // Fallback: close the window
+                setTimeout(() => {
+                    window.close();
+                }, 500);
+                
+            } catch (error) {
+                console.error('Error quitting app:', error);
+                window.close();
+            }
+        });
+    }
+
+    // Function to load settings into UI
+    const loadSettingsIntoUI = (settings) => {
+        console.log('Loading settings into UI:', settings);
+        if (settings.azureKey && azureKeyInput) azureKeyInput.value = settings.azureKey;
+        if (settings.azureRegion && azureRegionInput) azureRegionInput.value = settings.azureRegion;
+        if (settings.geminiKey && geminiKeyInput) geminiKeyInput.value = settings.geminiKey;
+        if (settings.windowGap && windowGapInput) windowGapInput.value = settings.windowGap;
+        if (settings.codingLanguage && codingLanguageSelect) codingLanguageSelect.value = settings.codingLanguage;
+        if (settings.activeSkill && activeSkillSelect) activeSkillSelect.value = settings.activeSkill;
+        
+        // Handle icon selection
+        const selectedIcon = settings.selectedIcon || settings.appIcon;
+        if (selectedIcon && iconGrid) {
+            const iconOptions = iconGrid.querySelectorAll('.icon-option');
+            iconOptions.forEach(option => {
+                if (option.dataset.icon === selectedIcon) {
+                    option.classList.add('selected');
+                    console.log('Selected icon set to:', selectedIcon);
+                } else {
+                    option.classList.remove('selected');
+                }
+            });
+        }
+    };
+
+    // Load settings when window opens
+    window.api.receive('load-settings', (settings) => {
+        console.log('Loading settings via load-settings event:', settings);
+        loadSettingsIntoUI(settings);
     });
 
-    // Handle window close
-    if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', () => {
-        // Settings are already saved automatically
-      });
+    // Listen for settings window shown event
+    if (window.electronAPI && window.electronAPI.receive) {
+        window.electronAPI.receive('settings-window-shown', () => {
+            console.log('Settings window shown, requesting current settings');
+            requestCurrentSettings();
+        });
     }
+
+    // Save settings helper function
+    const saveSettings = () => {
+        const settings = {};
+        if (azureKeyInput) settings.azureKey = azureKeyInput.value;
+        if (azureRegionInput) settings.azureRegion = azureRegionInput.value;
+        if (geminiKeyInput) settings.geminiKey = geminiKeyInput.value;
+        if (windowGapInput) settings.windowGap = windowGapInput.value;
+        if (codingLanguageSelect) settings.codingLanguage = codingLanguageSelect.value;
+        if (activeSkillSelect) settings.activeSkill = activeSkillSelect.value;
+        
+        console.log('Saving settings:', settings);
+        window.api.send('save-settings', settings);
+    };
+
+    // Add event listeners for all inputs
+    const inputs = [
+        azureKeyInput,
+        azureRegionInput,
+        geminiKeyInput,
+        windowGapInput
+    ];
+
+    inputs.forEach(input => {
+        if (input) {
+            input.addEventListener('change', saveSettings);
+            input.addEventListener('blur', saveSettings);
+        }
+    });
+
+    // Language selection handler
+    if (codingLanguageSelect) {
+        codingLanguageSelect.addEventListener('change', (e) => {
+            console.log('Language changed to:', e.target.value);
+            saveSettings();
+        });
+    }
+
+    // Skill selection handler
+    if (activeSkillSelect) {
+        activeSkillSelect.addEventListener('change', (e) => {
+            console.log('Skill changed to:', e.target.value);
+            saveSettings();
+            // Also update the main window
+            window.api.send('update-skill', e.target.value);
+        });
+    }
+
+    // Initialize icon grid with correct paths
+    const initializeIconGrid = () => {
+        if (!iconGrid) return;
+
+        const icons = [
+            { key: 'terminal', name: 'Terminal', src: './assests/icons/terminal.png' },
+            { key: 'activity', name: 'Activity', src: './assests/icons/activity.png' },
+            { key: 'settings', name: 'Settings', src: './assests/icons/settings.png' }
+        ];
+
+        iconGrid.innerHTML = '';
+
+        icons.forEach(icon => {
+            const iconElement = document.createElement('div');
+            iconElement.className = 'icon-option';
+            iconElement.dataset.icon = icon.key;
+            
+            const img = document.createElement('img');
+            img.src = icon.src;
+            img.alt = icon.name;
+            img.onload = () => {
+                console.log('Icon loaded successfully:', icon.src);
+            };
+            img.onerror = () => {
+                console.error('Failed to load icon:', icon.src);
+                // Try alternative paths
+                const altPaths = [
+                    `./assests/${icon.key}.png`,
+                    `./assets/icons/${icon.key}.png`,
+                    `./assets/${icon.key}.png`
+                ];
+                
+                let pathIndex = 0;
+                const tryNextPath = () => {
+                    if (pathIndex < altPaths.length) {
+                        img.src = altPaths[pathIndex];
+                        pathIndex++;
+                    } else {
+                        img.style.display = 'none';
+                        console.error('All icon paths failed for:', icon.key);
+                    }
+                };
+                
+                img.onload = () => {
+                    console.log('Icon loaded with alternative path:', img.src);
+                };
+                
+                img.onerror = tryNextPath;
+                tryNextPath();
+            };
+            
+            const label = document.createElement('div');
+            label.textContent = icon.name;
+            
+            iconElement.appendChild(img);
+            iconElement.appendChild(label);
+            
+            // Click handler for icon selection
+            iconElement.addEventListener('click', () => {
+                console.log('Icon selected:', icon.key);
+                
+                // Remove selection from all icons
+                iconGrid.querySelectorAll('.icon-option').forEach(opt => {
+                    opt.classList.remove('selected');
+                });
+                
+                // Add selection to clicked icon
+                iconElement.classList.add('selected');
+                
+                // Save the selection - this should trigger the app icon change
+                console.log('Sending selectedIcon to save-settings:', icon.key);
+                window.api.send('save-settings', { selectedIcon: icon.key });
+                
+                // Show visual feedback
+                iconElement.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    iconElement.style.transform = 'scale(1)';
+                }, 100);
+            });
+            
+            iconGrid.appendChild(iconElement);
+        });
+    };
+
+    // Initialize icon grid
+    initializeIconGrid();
+
+    // Request settings on load
+    setTimeout(() => {
+        requestCurrentSettings();
+    }, 200);
 
     // ESC key to close
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        this.closeWindow();
-      }
-    });
-  }
-
-  populateIconGrid() {
-    const iconGrid = document.getElementById('iconGrid');
-    iconGrid.innerHTML = '';
-
-    Object.entries(this.appIcons).forEach(([key, icon]) => {
-      const iconElement = document.createElement('div');
-      iconElement.className = 'icon-option';
-      iconElement.dataset.iconKey = key;
-      
-      // Create image element instead of emoji
-      const imgElement = document.createElement('img');
-      imgElement.src = `assests/icons/${icon.file}`;
-      imgElement.alt = icon.name;
-      imgElement.style.width = '40px';
-      imgElement.style.height = '40px';
-      imgElement.style.objectFit = 'contain';
-      imgElement.style.borderRadius = '8px';
-      
-      // Create name label
-      const nameElement = document.createElement('div');
-      nameElement.textContent = icon.name;
-      nameElement.style.fontSize = '12px';
-      nameElement.style.marginTop = '4px';
-      nameElement.style.color = 'rgba(255, 255, 255, 0.8)';
-      nameElement.style.textAlign = 'center';
-      
-      iconElement.appendChild(imgElement);
-      iconElement.appendChild(nameElement);
-      iconElement.title = icon.description;
-
-      // Set current selection
-      if (key === this.currentSettings.appIcon) {
-        iconElement.classList.add('selected');
-      }
-
-      // Click handler
-      iconElement.addEventListener('click', () => {
-        this.selectIcon(key);
-      });
-
-      iconGrid.appendChild(iconElement);
-    });
-  }
-
-  async selectIcon(iconKey) {
-    // Remove previous selection
-    document.querySelectorAll('.icon-option').forEach(el => {
-      el.classList.remove('selected');
-    });
-
-    // Add new selection
-    const selectedElement = document.querySelector(`[data-icon-key="${iconKey}"]`);
-    if (selectedElement) {
-      selectedElement.classList.add('selected');
-    }
-
-    // Update settings
-    this.currentSettings.appIcon = iconKey;
-    this.updateCurrentIconDisplay();
-
-    // Auto-save the icon change
-    await this.autoSaveIcon(iconKey);
-  }
-
-  updateUI() {
-    // Update language dropdown
-    document.getElementById('codingLanguage').value = this.currentSettings.codingLanguage;
-    this.updateCurrentLanguageDisplay();
-
-    // Update skill dropdown
-    document.getElementById('activeSkill').value = this.currentSettings.activeSkill;
-    this.updateCurrentSkillDisplay();
-
-    // Update icon display
-    this.updateCurrentIconDisplay();
-  }
-
-  updateCurrentLanguageDisplay() {
-    const languageSelect = document.getElementById('codingLanguage');
-    const selectedOption = languageSelect.options[languageSelect.selectedIndex];
-    document.getElementById('currentLanguage').textContent = selectedOption.text;
-  }
-
-  updateCurrentSkillDisplay() {
-    const skillSelect = document.getElementById('activeSkill');
-    const selectedOption = skillSelect.options[skillSelect.selectedIndex];
-    document.getElementById('currentSkill').textContent = selectedOption.text;
-  }
-
-  updateCurrentIconDisplay() {
-    const iconData = this.appIcons[this.currentSettings.appIcon];
-    if (iconData) {
-      document.getElementById('currentIcon').textContent = iconData.name;
-    }
-  }
-
-  async autoSaveSetting(settingType, value) {
-    try {
-      console.log(`Auto-saving ${settingType}:`, value);
-      
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        // Save the specific setting
-        const settingsUpdate = { [settingType]: value };
-        await window.electronAPI.saveSettings(settingsUpdate);
-
-        // Update skill in main window if it's a skill change
-        if (settingType === 'activeSkill') {
-          await window.electronAPI.updateActiveSkill(value);
+        if (e.key === 'Escape') {
+            window.api.send('close-settings');
         }
+    });
 
-        console.log(`${settingType} auto-saved successfully`);
-      }
-    } catch (error) {
-      console.error(`Failed to auto-save ${settingType}:`, error);
-      this.showTempFeedback(`Failed to save ${settingType}`, 'error');
-    }
-  }
-
-  async autoSaveIcon(iconKey) {
-    try {
-      console.log('Auto-saving icon:', iconKey);
-      
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        // Save icon setting
-        await window.electronAPI.saveSettings({ appIcon: iconKey });
-        
-        // Update app icon and name immediately
-        await window.electronAPI.updateAppIcon(iconKey);
-        console.log('Icon auto-saved successfully');
-      }
-    } catch (error) {
-      console.error('Failed to auto-save icon:', error);
-      this.showTempFeedback('Failed to save icon', 'error');
-    }
-  }
-
-  showTempFeedback(message, type = 'success') {
-    // Create or update feedback element
-    let feedback = document.getElementById('tempFeedback');
-    if (!feedback) {
-      feedback = document.createElement('div');
-      feedback.id = 'tempFeedback';
-      feedback.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        padding: 10px 15px;
-        border-radius: 6px;
-        font-size: 12px;
-        font-weight: 600;
-        z-index: 1000;
-        transition: all 0.3s ease;
-        opacity: 0;
-        transform: translateX(100px);
-      `;
-      document.body.appendChild(feedback);
-    }
-
-    // Set message and style
-    feedback.textContent = message;
-    feedback.style.background = type === 'success' 
-      ? 'linear-gradient(135deg, #4CAF50, #45a049)' 
-      : 'linear-gradient(135deg, #f44336, #d32f2f)';
-    feedback.style.color = 'white';
-
-    // Show with animation
-    setTimeout(() => {
-      feedback.style.opacity = '1';
-      feedback.style.transform = 'translateX(0)';
-    }, 10);
-
-    // Hide after delay
-    setTimeout(() => {
-      feedback.style.opacity = '0';
-      feedback.style.transform = 'translateX(100px)';
-    }, 2000);
-  }
-
-  closeWindow() {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      window.electronAPI.closeWindow();
-    }
-  }
-
-  // Method to get skill display name
-  getSkillDisplayName(skillKey) {
-    const skillNames = {
-      'programming': 'Programming',
-      'dsa': 'Data Structures & Algorithms',
-      'system-design': 'System Design',
-      'behavioral': 'Behavioral Interview',
-      'data-science': 'Data Science',
-      'sales': 'Sales & Business',
-      'presentation': 'Presentation Skills',
-      'negotiation': 'Negotiation',
-      'devops': 'DevOps & Infrastructure'
-    };
-    return skillNames[skillKey] || skillKey;
-  }
-
-  // Method to get language display name
-  getLanguageDisplayName(langKey) {
-    const select = document.getElementById('codingLanguage');
-    const option = select.querySelector(`option[value="${langKey}"]`);
-    return option ? option.textContent : langKey;
-  }
-}
-
-// Initialize the settings window when DOM is loaded
-if (typeof document !== 'undefined') {
-  document.addEventListener('DOMContentLoaded', () => {
-    new SettingsWindow();
-  });
-}
-
-// Global functions for electron API
-if (typeof window !== 'undefined') {
-  window.settingsAPI = {
-    updateSettings: (settings) => {
-      if (window.settingsWindow) {
-        window.settingsWindow.currentSettings = { ...window.settingsWindow.currentSettings, ...settings };
-        window.settingsWindow.updateUI();
-      }
-    }
-  };
-} 
+    console.log('Settings window initialization complete');
+}); 

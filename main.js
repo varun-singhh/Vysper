@@ -69,6 +69,10 @@ class ApplicationController {
 
     try {
       this.setupPermissions();
+      
+      // Small delay to ensure desktop/space detection is accurate
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
       await windowManager.initializeWindows();
       this.setupGlobalShortcuts();
       
@@ -78,7 +82,8 @@ class ApplicationController {
       this.isReady = true;
       
       logger.info('Application initialized successfully', {
-        windowCount: Object.keys(windowManager.getWindowStats().windows).length
+        windowCount: Object.keys(windowManager.getWindowStats().windows).length,
+        currentDesktop: 'detected'
       });
       
       sessionManager.addEvent('Application started');
@@ -105,7 +110,14 @@ class ApplicationController {
       'CommandOrControl+Shift+I': () => windowManager.toggleInteraction(),
       'CommandOrControl+Shift+C': () => windowManager.switchToWindow('chat'),
       'CommandOrControl+Shift+K': () => windowManager.switchToWindow('skills'),
-      'Alt+A': () => windowManager.toggleInteraction()
+      'CommandOrControl+,': () => windowManager.showSettings(),
+      'Alt+A': () => windowManager.toggleInteraction(),
+      'Alt+R': () => this.toggleSpeechRecognition(),
+      // Window movement shortcuts for bound windows
+      'CommandOrControl+Left': () => windowManager.moveBoundWindows(-20, 0),
+      'CommandOrControl+Right': () => windowManager.moveBoundWindows(20, 0),
+      'CommandOrControl+Up': () => windowManager.moveBoundWindows(0, -20),
+      'CommandOrControl+Down': () => windowManager.moveBoundWindows(0, 20)
     };
 
     Object.entries(shortcuts).forEach(([accelerator, handler]) => {
@@ -201,6 +213,32 @@ class ApplicationController {
       return llmService.getStats();
     });
     
+    // Window binding IPC handlers
+    ipcMain.handle('set-window-binding', (event, enabled) => {
+      return windowManager.setWindowBinding(enabled);
+    });
+    
+    ipcMain.handle('toggle-window-binding', () => {
+      return windowManager.toggleWindowBinding();
+    });
+    
+    ipcMain.handle('get-window-binding-status', () => {
+      return windowManager.getWindowBindingStatus();
+    });
+    
+    ipcMain.handle('get-window-stats', () => {
+      return windowManager.getWindowStats();
+    });
+    
+    ipcMain.handle('set-window-gap', (event, gap) => {
+      return windowManager.setWindowGap(gap);
+    });
+    
+    ipcMain.handle('move-bound-windows', (event, { deltaX, deltaY }) => {
+      windowManager.moveBoundWindows(deltaX, deltaY);
+      return windowManager.getWindowBindingStatus();
+    });
+    
     ipcMain.handle('test-gemini-connection', async () => {
       return await llmService.testConnection();
     });
@@ -208,6 +246,16 @@ class ApplicationController {
     // Settings handlers
     ipcMain.handle('show-settings', () => {
       windowManager.showSettings();
+      
+      // Send current settings to the settings window
+      const settingsWindow = windowManager.getWindow('settings');
+      if (settingsWindow) {
+        const currentSettings = this.getSettings();
+        setTimeout(() => {
+          settingsWindow.webContents.send('load-settings', currentSettings);
+        }, 100);
+      }
+      
       return { success: true };
     });
 
@@ -258,6 +306,78 @@ class ApplicationController {
       windowManager.expandLLMWindow(contentMetrics);
       return { success: true, contentMetrics };
     });
+
+    ipcMain.handle('quit-app', () => {
+      logger.info('Quit app requested via IPC');
+      try {
+        // Force quit the application
+        const { app } = require('electron');
+        
+        // Close all windows first
+        windowManager.destroyAllWindows();
+        
+        // Unregister shortcuts
+        globalShortcut.unregisterAll();
+        
+        // Force quit
+        app.quit();
+        
+        // If the above doesn't work, force exit
+        setTimeout(() => {
+          process.exit(0);
+        }, 2000);
+        
+      } catch (error) {
+        logger.error('Error during quit:', error);
+        process.exit(1);
+      }
+    });
+
+    // Handle close settings
+    ipcMain.on('close-settings', () => {
+      const settingsWindow = windowManager.getWindow('settings');
+      if (settingsWindow) {
+        settingsWindow.hide();
+      }
+    });
+
+    // Handle save settings (synchronous)
+    ipcMain.on('save-settings', (event, settings) => {
+      this.saveSettings(settings);
+    });
+
+    // Handle update skill
+    ipcMain.on('update-skill', (event, skill) => {
+      this.activeSkill = skill;
+      windowManager.broadcastToAllWindows('skill-updated', { skill });
+    });
+
+    // Handle quit app (alternative method)
+    ipcMain.on('quit-app', () => {
+      logger.info('Quit app requested via IPC (on method)');
+      try {
+        const { app } = require('electron');
+        windowManager.destroyAllWindows();
+        globalShortcut.unregisterAll();
+        app.quit();
+        setTimeout(() => process.exit(0), 1000);
+      } catch (error) {
+        logger.error('Error during quit (on method):', error);
+        process.exit(1);
+      }
+    });
+  }
+
+  toggleSpeechRecognition() {
+    const currentStatus = speechService.getStatus();
+    
+    if (currentStatus.isRecording) {
+      speechService.stopRecording();
+      logger.info('Speech recognition stopped via global shortcut');
+    } else {
+      speechService.startRecording();
+      logger.info('Speech recognition started via global shortcut');
+    }
   }
 
   async triggerScreenshotOCR() {
@@ -395,6 +515,21 @@ class ApplicationController {
   onActivate() {
     if (!this.isReady) {
       this.onAppReady();
+    } else {
+      // When app is activated, ensure windows appear on current desktop
+      const mainWindow = windowManager.getWindow('main');
+      if (mainWindow && mainWindow.isVisible()) {
+        windowManager.showOnCurrentDesktop(mainWindow);
+      }
+      
+      // Also handle other visible windows
+      windowManager.windows.forEach((window, type) => {
+        if (window.isVisible()) {
+          windowManager.showOnCurrentDesktop(window);
+        }
+      });
+      
+      logger.debug('App activated - ensured windows appear on current desktop');
     }
   }
 
@@ -413,7 +548,8 @@ class ApplicationController {
     return {
       codingLanguage: this.codingLanguage || 'javascript',
       activeSkill: this.activeSkill || 'dsa',
-      appIcon: this.appIcon || 'terminal'
+      appIcon: this.appIcon || 'terminal',
+      selectedIcon: this.appIcon || 'terminal'
     };
   }
 
@@ -425,9 +561,18 @@ class ApplicationController {
       }
       if (settings.activeSkill) {
         this.activeSkill = settings.activeSkill;
+        // Broadcast skill change to all windows
+        windowManager.broadcastToAllWindows('skill-updated', { skill: settings.activeSkill });
       }
       if (settings.appIcon) {
         this.appIcon = settings.appIcon;
+      }
+      
+      // Handle icon change specifically
+      if (settings.selectedIcon) {
+        this.appIcon = settings.selectedIcon;
+        // Immediately update the app icon
+        this.updateAppIcon(settings.selectedIcon);
       }
 
       // Persist settings to file or config
@@ -451,6 +596,9 @@ class ApplicationController {
     try {
       const { app } = require('electron');
       const path = require('path');
+      const fs = require('fs');
+      
+      console.log('Updating app icon to:', iconKey);
       
       // Icon mapping for available icons in assests/icons folder
       const iconPaths = {
@@ -469,41 +617,61 @@ class ApplicationController {
       const iconPath = iconPaths[iconKey];
       const appName = appNames[iconKey];
       
-      if (iconPath && require('fs').existsSync(iconPath)) {
-        const fullIconPath = path.resolve(iconPath);
-        
-        // Set app icon for dock/taskbar
-        if (process.platform === 'darwin') {
-          // macOS - update dock icon
-          app.dock.setIcon(fullIconPath);
-        } else {
-          // Windows/Linux - update window icons
-          const windows = windowManager.windows;
-          windows.forEach(window => {
-            if (window && !window.isDestroyed()) {
-              window.setIcon(fullIconPath);
-            }
-          });
-        }
-        
-        // Update app name for stealth mode
-        this.updateAppName(appName, iconKey);
-        
-        logger.info('App icon and name updated successfully', { 
-          iconKey, 
-          appName,
-          iconPath: fullIconPath, 
-          platform: process.platform 
-        });
-      } else {
-        logger.warn('Icon file not found', { iconKey, iconPath });
+      if (!iconPath) {
+        logger.error('Invalid icon key', { iconKey });
+        return { success: false, error: 'Invalid icon key' };
+      }
+      
+      const fullIconPath = path.resolve(iconPath);
+      console.log('Icon path resolved to:', fullIconPath);
+      
+      if (!fs.existsSync(fullIconPath)) {
+        logger.error('Icon file not found', { iconKey, iconPath: fullIconPath });
         return { success: false, error: 'Icon file not found' };
       }
+      
+      // Set app icon for dock/taskbar
+      if (process.platform === 'darwin') {
+        // macOS - update dock icon
+        console.log('Setting macOS dock icon...');
+        app.dock.setIcon(fullIconPath);
+        
+        // Force dock refresh with multiple attempts
+        setTimeout(() => {
+          app.dock.setIcon(fullIconPath);
+          console.log('Dock icon set (retry 1)');
+        }, 100);
+        
+        setTimeout(() => {
+          app.dock.setIcon(fullIconPath);
+          console.log('Dock icon set (retry 2)');
+        }, 500);
+        
+      } else {
+        // Windows/Linux - update window icons
+        console.log('Setting window icons for Windows/Linux...');
+        windowManager.windows.forEach((window, type) => {
+          if (window && !window.isDestroyed()) {
+            window.setIcon(fullIconPath);
+          }
+        });
+      }
+      
+      // Update app name for stealth mode
+      this.updateAppName(appName, iconKey);
+      
+      logger.info('App icon and name updated successfully', { 
+        iconKey, 
+        appName,
+        iconPath: fullIconPath, 
+        platform: process.platform,
+        fileExists: fs.existsSync(fullIconPath)
+      });
 
       this.appIcon = iconKey;
       return { success: true };
     } catch (error) {
-      logger.error('Failed to update app icon', { error: error.message });
+      logger.error('Failed to update app icon', { error: error.message, stack: error.stack });
       return { success: false, error: error.message };
     }
   }
