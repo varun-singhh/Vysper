@@ -122,7 +122,7 @@ class WindowManager {
     this.isVisible = true;
     
     // DevTools can be opened manually if needed for debugging
-    // window.webContents.openDevTools({ mode: 'detach' });
+    window.webContents.openDevTools({ mode: 'detach' });
     
     // Wait for app to fully initialize and detect current desktop
     setTimeout(() => {

@@ -113,11 +113,11 @@ class ApplicationController {
       'CommandOrControl+,': () => windowManager.showSettings(),
       'Alt+A': () => windowManager.toggleInteraction(),
       'Alt+R': () => this.toggleSpeechRecognition(),
-      // Window movement shortcuts for bound windows
-      'CommandOrControl+Left': () => windowManager.moveBoundWindows(-20, 0),
-      'CommandOrControl+Right': () => windowManager.moveBoundWindows(20, 0),
-      'CommandOrControl+Up': () => windowManager.moveBoundWindows(0, -20),
-      'CommandOrControl+Down': () => windowManager.moveBoundWindows(0, 20)
+      // Context-sensitive shortcuts based on interaction mode
+      'CommandOrControl+Up': () => this.handleUpArrow(),
+      'CommandOrControl+Down': () => this.handleDownArrow(),
+      'CommandOrControl+Left': () => this.handleLeftArrow(),
+      'CommandOrControl+Right': () => this.handleRightArrow()
     };
 
     Object.entries(shortcuts).forEach(([accelerator, handler]) => {
@@ -190,6 +190,23 @@ class ApplicationController {
       if (mainWindow) {
         mainWindow.setSize(width, height);
         logger.debug('Main window resized', { width, height });
+      }
+      return { success: true };
+    });
+
+    ipcMain.handle('move-window', (event, { deltaX, deltaY }) => {
+      const mainWindow = windowManager.getWindow('main');
+      if (mainWindow) {
+        const [currentX, currentY] = mainWindow.getPosition();
+        const newX = currentX + deltaX;
+        const newY = currentY + deltaY;
+        mainWindow.setPosition(newX, newY);
+        logger.debug('Main window moved', { 
+          deltaX, 
+          deltaY, 
+          from: { x: currentX, y: currentY },
+          to: { x: newX, y: newY }
+        });
       }
       return { success: true };
     });
@@ -378,6 +395,93 @@ class ApplicationController {
       speechService.startRecording();
       logger.info('Speech recognition started via global shortcut');
     }
+  }
+
+  handleUpArrow() {
+    const isInteractive = windowManager.getWindowStats().isInteractive;
+    
+    if (isInteractive) {
+      // Interactive mode: Navigate to previous skill
+      this.navigateSkill(-1);
+    } else {
+      // Non-interactive mode: Move window up
+      windowManager.moveBoundWindows(0, -20);
+    }
+  }
+
+  handleDownArrow() {
+    const isInteractive = windowManager.getWindowStats().isInteractive;
+    
+    if (isInteractive) {
+      // Interactive mode: Navigate to next skill
+      this.navigateSkill(1);
+    } else {
+      // Non-interactive mode: Move window down
+      windowManager.moveBoundWindows(0, 20);
+    }
+  }
+
+  handleLeftArrow() {
+    const isInteractive = windowManager.getWindowStats().isInteractive;
+    
+    if (!isInteractive) {
+      // Non-interactive mode: Move window left
+      windowManager.moveBoundWindows(-20, 0);
+    }
+    // Interactive mode: Left arrow does nothing
+  }
+
+  handleRightArrow() {
+    const isInteractive = windowManager.getWindowStats().isInteractive;
+    
+    if (!isInteractive) {
+      // Non-interactive mode: Move window right
+      windowManager.moveBoundWindows(20, 0);
+    }
+    // Interactive mode: Right arrow does nothing
+  }
+
+  navigateSkill(direction) {
+    const availableSkills = [
+      'programming',
+      'dsa', 
+      'system-design',
+      'behavioral',
+      'data-science',
+      'sales',
+      'presentation',
+      'negotiation',
+      'devops'
+    ];
+    
+    const currentIndex = availableSkills.indexOf(this.activeSkill);
+    if (currentIndex === -1) {
+      logger.warn('Current skill not found in available skills', { 
+        currentSkill: this.activeSkill,
+        availableSkills 
+      });
+      return;
+    }
+    
+    // Calculate new index with wrapping
+    let newIndex = currentIndex + direction;
+    if (newIndex >= availableSkills.length) {
+      newIndex = 0; // Wrap to beginning
+    } else if (newIndex < 0) {
+      newIndex = availableSkills.length - 1; // Wrap to end
+    }
+    
+    const newSkill = availableSkills[newIndex];
+    this.activeSkill = newSkill;
+    
+    logger.info('Skill navigated via global shortcut', {
+      from: availableSkills[currentIndex],
+      to: newSkill,
+      direction: direction > 0 ? 'down' : 'up'
+    });
+    
+    // Broadcast the skill change to all windows
+    windowManager.broadcastToAllWindows('skill-updated', { skill: newSkill });
   }
 
   async triggerScreenshotOCR() {

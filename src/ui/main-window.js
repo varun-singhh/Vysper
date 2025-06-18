@@ -62,6 +62,17 @@ class MainWindowUI {
                 this.handleSkillChanged({ skill: 'programming' });
             }, 2000);
             
+            // Add debugging info about current state
+            setTimeout(() => {
+                console.log('=== CURRENT STATE DEBUG ===');
+                console.log('isInteractive:', this.isInteractive);
+                console.log('currentSkill:', this.currentSkill);
+                console.log('availableSkills:', this.availableSkills);
+                console.log('statusDot:', this.statusDot?.className);
+                console.log('skillIndicator:', this.skillIndicator?.querySelector('span')?.textContent);
+                console.log('=== END DEBUG ===');
+            }, 3000);
+            
         } catch (error) {
             console.error('Failed to initialize main window UI:', error);
             logger.error('Failed to initialize main window UI', {
@@ -392,14 +403,28 @@ class MainWindowUI {
                 }
             }
             
-            // Skill navigation shortcuts - only work in interactive mode
-            if (this.isInteractive && e.metaKey) {
-                if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    this.navigateSkill(-1); // Previous skill
-                } else if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    this.navigateSkill(1); // Next skill
+            // Handle Cmd + Arrow keys based on interaction mode
+            if (e.metaKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
+                e.preventDefault();
+                
+                console.log('Cmd + Arrow key pressed:', e.key, 'Interactive mode:', this.isInteractive);
+                
+                if (this.isInteractive) {
+                    // Interactive mode: Cmd + Up/Down for skill navigation
+                    if (e.key === 'ArrowUp') {
+                        console.log('Navigating to previous skill...');
+                        this.navigateSkill(-1); // Previous skill
+                    } else if (e.key === 'ArrowDown') {
+                        console.log('Navigating to next skill...');
+                        this.navigateSkill(1); // Next skill
+                    } else {
+                        console.log('Left/Right arrows do nothing in interactive mode');
+                    }
+                    // Left/Right arrows do nothing in interactive mode
+                } else {
+                    // Non-interactive mode: Cmd + Arrow keys for window movement
+                    console.log('Moving window in direction:', e.key);
+                    this.moveWindow(e.key);
                 }
             }
             
@@ -552,10 +577,23 @@ class MainWindowUI {
     }
 
     navigateSkill(direction) {
-        if (!this.isInteractive) return;
+        console.log('navigateSkill called with direction:', direction, 'isInteractive:', this.isInteractive);
+        
+        if (!this.isInteractive) {
+            console.log('Not in interactive mode, returning early');
+            return;
+        }
+        
+        console.log('Current skill:', this.currentSkill, 'Available skills:', this.availableSkills);
         
         const currentIndex = this.availableSkills.indexOf(this.currentSkill);
-        if (currentIndex === -1) return;
+        console.log('Found current skill at index:', currentIndex);
+        if (currentIndex === -1) {
+            console.log('Current skill not found in available skills array');
+            console.log('Exact current skill:', JSON.stringify(this.currentSkill));
+            console.log('Available skills:', JSON.stringify(this.availableSkills));
+            return;
+        }
         
         // Calculate new index with wrapping
         let newIndex = currentIndex + direction;
@@ -566,6 +604,7 @@ class MainWindowUI {
         }
         
         const newSkill = this.availableSkills[newIndex];
+        console.log('Navigating from index', currentIndex, 'to index', newIndex, 'new skill:', newSkill);
         
         // Update skill locally and notify main process
         this.currentSkill = newSkill;
@@ -574,12 +613,14 @@ class MainWindowUI {
         // Save the skill change via IPC
         if (window.electronAPI && window.electronAPI.updateActiveSkill) {
             window.electronAPI.updateActiveSkill(newSkill).then(() => {
+                console.log('Skill navigation completed successfully');
                 logger.info('Skill navigation completed', {
                     component: 'MainWindowUI',
                     newSkill,
                     direction: direction > 0 ? 'down' : 'up'
                 });
             }).catch(error => {
+                console.log('Failed to update skill via navigation:', error);
                 logger.error('Failed to update skill via navigation', {
                     component: 'MainWindowUI',
                     error: error.message
@@ -663,6 +704,40 @@ class MainWindowUI {
             component: 'MainWindowUI',
             interactive: this.isInteractive
         });
+    }
+
+    moveWindow(direction) {
+        const moveDistance = 20; // pixels
+        
+        if (window.electronAPI && window.electronAPI.moveWindow) {
+            let deltaX = 0, deltaY = 0;
+            
+            switch(direction) {
+                case 'ArrowUp':
+                    deltaY = -moveDistance;
+                    break;
+                case 'ArrowDown':
+                    deltaY = moveDistance;
+                    break;
+                case 'ArrowLeft':
+                    deltaX = -moveDistance;
+                    break;
+                case 'ArrowRight':
+                    deltaX = moveDistance;
+                    break;
+            }
+            
+            window.electronAPI.moveWindow(deltaX, deltaY);
+            logger.debug('Moving window', {
+                component: 'MainWindowUI',
+                direction: direction,
+                deltaX: deltaX,
+                deltaY: deltaY,
+                interactive: this.isInteractive
+            });
+        } else {
+            logger.warn('moveWindow API not available', { component: 'MainWindowUI' });
+        }
     }
 
     showNotification(message, type = 'info') {
