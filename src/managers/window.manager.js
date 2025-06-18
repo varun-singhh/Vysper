@@ -44,12 +44,6 @@ class WindowManager {
         file: 'chat.html',
         title: 'Chat'
       },
-      skills: {
-        width: 400,
-        height: 600,
-        file: 'skills.html',
-        title: 'Skills'
-      },
       llmResponse: {
         width: 840,
         height: 480,
@@ -95,7 +89,6 @@ class WindowManager {
     try {
       await this.createMainWindow();
       await this.createChatWindow();
-      await this.createSkillsWindow();
       await this.createLLMResponseWindow();
       await this.createSettingsWindow();
       
@@ -141,17 +134,7 @@ class WindowManager {
     window.hide();
     return window;
   }
-
-  async createSkillsWindow() {
-    if (this.windows.has('skills')) {
-      return this.windows.get('skills');
-    }
-    const window = await this.createWindow('skills');
-    this.windows.set('skills', window);
-    window.hide();
-    return window;
-  }
-
+  
   async createLLMResponseWindow() {
     if (this.windows.has('llmResponse')) {
       return this.windows.get('llmResponse');
@@ -388,7 +371,6 @@ class WindowManager {
     const positions = {
       main: { x: displayX + 50, y: displayY + topMargin },
       chat: { x: displayX + screenWidth - windowWidth - 50, y: displayY + topMargin },
-      skills: { x: displayX + 50, y: displayY + topMargin + 100 }, // Slightly lower to avoid overlap
       llmResponse: { x: displayX + (screenWidth - windowWidth) / 2, y: displayY + topMargin },
       settings: { x: displayX + (screenWidth - windowWidth) / 2, y: displayY + topMargin }
     };
