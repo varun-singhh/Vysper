@@ -55,24 +55,6 @@ class MainWindowUI {
                 interactive: this.isInteractive
             });
             
-            // Test skill update immediately
-            console.log('Testing immediate skill update to verify system works...');
-            setTimeout(() => {
-                console.log('Testing skill change to "programming"...');
-                this.handleSkillChanged({ skill: 'programming' });
-            }, 2000);
-            
-            // Add debugging info about current state
-            setTimeout(() => {
-                console.log('=== CURRENT STATE DEBUG ===');
-                console.log('isInteractive:', this.isInteractive);
-                console.log('currentSkill:', this.currentSkill);
-                console.log('availableSkills:', this.availableSkills);
-                console.log('statusDot:', this.statusDot?.className);
-                console.log('skillIndicator:', this.skillIndicator?.querySelector('span')?.textContent);
-                console.log('=== END DEBUG ===');
-            }, 3000);
-            
         } catch (error) {
             console.error('Failed to initialize main window UI:', error);
             logger.error('Failed to initialize main window UI', {

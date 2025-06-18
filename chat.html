@@ -33,9 +33,10 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            -webkit-app-region: no-drag;
+            -webkit-app-region: drag;
             background: rgba(0, 0, 0, 0.2);
             backdrop-filter: blur(10px);
+            cursor: move;
         }
         .header-title {
             color: rgba(255, 255, 255, 0.95);
@@ -45,6 +46,7 @@
             align-items: center;
             gap: 8px;
             text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+            pointer-events: none;
         }
         .recording-indicator {
             width: 8px;
@@ -117,6 +119,7 @@
             border-radius: 8px;
             padding: 8px 12px;
             border: 1px solid rgba(255, 255, 255, 0.15);
+            -webkit-app-region: no-drag;
         }
         .input-field {
             flex: 1;
@@ -138,6 +141,7 @@
             color: rgba(255, 255, 255, 0.9);
             cursor: pointer;
             transition: all 0.2s;
+            -webkit-app-region: no-drag;
         }
         .send-button:hover {
             background: rgba(255, 255, 255, 0.25);
@@ -166,6 +170,7 @@
             color: rgba(255, 255, 255, 0.9);
             cursor: pointer;
             transition: all 0.2s;
+            -webkit-app-region: no-drag;
         }
         .mic-button:hover {
             background: rgba(255, 255, 255, 0.25);
@@ -236,7 +241,7 @@
         <div class="chat-header">
             <div class="header-title">
                 <i class="fas fa-microphone"></i>
-                Live Transcription
+                Live Transcription & Chat
                 <div class="recording-indicator" id="recordingIndicator"></div>
             </div>
         </div>

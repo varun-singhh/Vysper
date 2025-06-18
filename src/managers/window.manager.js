@@ -122,7 +122,7 @@ class WindowManager {
     this.isVisible = true;
     
     // DevTools can be opened manually if needed for debugging
-    window.webContents.openDevTools({ mode: 'detach' });
+    // window.webContents.openDevTools({ mode: 'detach' });
     
     // Wait for app to fully initialize and detect current desktop
     setTimeout(() => {
@@ -260,8 +260,30 @@ class WindowManager {
         }),
         level: process.platform === 'darwin' ? 'floating' : undefined,
       };
+    } else if (type === 'chat') {
+      // Chat window - frameless without window controls
+      browserWindowOptions = {
+        ...baseOptions,
+        minWidth: config.get('window.minWidth'),
+        minHeight: config.get('window.minHeight'),
+        maxWidth: config.get('window.maxWidth'),
+        maxHeight: config.get('window.maxHeight'),
+        frame: false,
+        titleBarStyle: 'hidden',
+        transparent: true,
+        resizable: true,
+        minimizable: false,
+        maximizable: false,
+        closable: false,
+        hasShadow: true,
+        ...(process.platform === 'darwin' && {
+          titleBarStyle: 'hiddenInset',
+          trafficLightPosition: { x: -100, y: -100 }
+        }),
+        level: process.platform === 'darwin' ? 'floating' : undefined,
+      };
     } else {
-      // Other windows (chat, skills)
+      // Other windows (skills)
       browserWindowOptions = {
         ...baseOptions,
         minWidth: config.get('window.minWidth'),
@@ -645,8 +667,6 @@ class WindowManager {
     if (this.isScreenBeingShared) {
       return;
     }
-
-    this.hideAllWindows();
 
     const targetWindow = this.windows.get(windowType);
     if (targetWindow) {
