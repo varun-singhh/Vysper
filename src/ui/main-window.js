@@ -34,6 +34,7 @@ class MainWindowUI {
 
     async init() {
         try {
+            console.log('MainWindowUI init() starting...');
             this.setupElements();
             this.setupEventListeners();
             
@@ -47,12 +48,22 @@ class MainWindowUI {
             this.updateAllElementStates(); // Update all elements with current state
             this.resizeWindowToContent();
             
+            console.log('MainWindowUI init() completed successfully');
             logger.info('Main window UI initialized', {
                 component: 'MainWindowUI',
                 skill: this.currentSkill,
                 interactive: this.isInteractive
             });
+            
+            // Test skill update immediately
+            console.log('Testing immediate skill update to verify system works...');
+            setTimeout(() => {
+                console.log('Testing skill change to "programming"...');
+                this.handleSkillChanged({ skill: 'programming' });
+            }, 2000);
+            
         } catch (error) {
+            console.error('Failed to initialize main window UI:', error);
             logger.error('Failed to initialize main window UI', {
                 component: 'MainWindowUI',
                 error: error.message
@@ -198,6 +209,8 @@ class MainWindowUI {
                 component: 'MainWindowUI',
                 interactive: this.isInteractive
             });
+        } else {
+            logger.debug('Settings indicator not found, skipping state update');
         }
     }
 
@@ -224,19 +237,29 @@ class MainWindowUI {
     setupElements() {
         this.statusDot = document.getElementById('statusDot');
         this.skillIndicator = document.getElementById('skillIndicator');
-        this.settingsIndicator = document.getElementById('settingsIndicator');
+        this.settingsIndicator = document.getElementById('settingsIndicator'); // Optional
         this.micButton = document.getElementById('micButton');
         
-        if (!this.statusDot || !this.skillIndicator || !this.settingsIndicator || !this.micButton) {
+        console.log('Elements found:', {
+            statusDot: !!this.statusDot,
+            skillIndicator: !!this.skillIndicator,
+            settingsIndicator: !!this.settingsIndicator,
+            micButton: !!this.micButton
+        });
+        
+        // Check for required elements (settingsIndicator is optional)
+        if (!this.statusDot || !this.skillIndicator || !this.micButton) {
             throw new Error('Required UI elements not found');
         }
 
-        // Add click handler for settings
-        this.settingsIndicator.addEventListener('click', () => {
-            if (this.isInteractive) {
-                this.showSettingsMenu();
-            }
-        });
+        // Add click handler for settings (if element exists)
+        if (this.settingsIndicator) {
+            this.settingsIndicator.addEventListener('click', () => {
+                if (this.isInteractive) {
+                    this.showSettingsMenu();
+                }
+            });
+        }
 
         // Add click handler for microphone
         this.micButton.addEventListener('click', () => {
@@ -287,16 +310,40 @@ class MainWindowUI {
         
         // Also listen via the api interface for backup
         if (window.api) {
+            console.log('Setting up api event listeners...');
+            
             window.api.receive('interaction-mode-changed', (interactive) => {
                 logger.debug('Interaction mode changed via api:', interactive);
                 this.handleInteractionModeChanged(interactive);
             });
             
             window.api.receive('skill-updated', (data) => {
+                console.log('!!! SKILL UPDATED EVENT RECEIVED !!!', data);
+                logger.info('Skill updated event received from main process:', data);
+                console.log('Skill updated - old skill:', this.currentSkill, 'new data:', data);
                 if (data && data.skill) {
                     this.handleSkillChanged(data);
+                } else if (typeof data === 'string') {
+                    // Handle case where skill is passed directly as string
+                    console.log('Skill passed as string:', data);
+                    this.handleSkillChanged({ skill: data });
+                } else {
+                    logger.warn('Skill updated event received but no skill data found:', data);
+                    console.log('Raw event data:', JSON.stringify(data));
                 }
             });
+            
+            // Listen for skill updates from settings window  
+            window.api.receive('update-skill', (skill) => {
+                console.log('!!! UPDATE SKILL EVENT RECEIVED !!!', skill);
+                logger.info('Direct skill update received from settings:', skill);
+                console.log('Direct skill update - old skill:', this.currentSkill, 'new skill:', skill);
+                this.handleSkillChanged({ skill: skill });
+            });
+            
+            console.log('API event listeners set up successfully');
+        } else {
+            console.error('window.api not available - event listeners not set up!');
         }
         
         // Keyboard shortcuts
@@ -386,9 +433,20 @@ class MainWindowUI {
     }
 
     handleSkillChanged(data) {
+        const oldSkill = this.currentSkill;
         this.currentSkill = data.skill;
+        
+        logger.info('Handling skill change', {
+            component: 'MainWindowUI',
+            oldSkill: oldSkill,
+            newSkill: data.skill,
+            skillIndicatorExists: !!this.skillIndicator
+        });
+        
         this.updateSkillIndicator();
-        logger.info('Skill changed', {
+        
+        console.log('Skill change completed - UI should now show:', data.skill);
+        logger.info('Skill changed successfully', {
             component: 'MainWindowUI',
             skill: data.skill
         });
@@ -437,13 +495,31 @@ class MainWindowUI {
             'negotiation': 'Negotiation'
         };
         
-        if (!this.skillIndicator) return;
+        logger.info('Updating skill indicator', {
+            component: 'MainWindowUI',
+            currentSkill: this.currentSkill,
+            skillIndicatorExists: !!this.skillIndicator
+        });
+        
+        if (!this.skillIndicator) {
+            logger.error('Skill indicator element not found!');
+            return;
+        }
         
         const skillName = skillNames[this.currentSkill] || this.currentSkill.toUpperCase();
         const skillSpan = this.skillIndicator.querySelector('span');
         
+        logger.info('Looking for skill span element', {
+            component: 'MainWindowUI',
+            spanExists: !!skillSpan,
+            skillName: skillName
+        });
+        
         if (skillSpan) {
+            const oldText = skillSpan.textContent;
             skillSpan.textContent = skillName;
+            
+            console.log('Updated skill span from', oldText, 'to', skillName);
             
             const tooltip = this.isInteractive ? 
                 `${skillName} - Use ⌘↑/↓ to navigate skills` : 
@@ -453,11 +529,14 @@ class MainWindowUI {
             // Add visual feedback for skill change
             this.animateSkillChange();
             
-            logger.debug('Skill indicator updated', {
+            logger.info('Skill indicator updated successfully', {
                 component: 'MainWindowUI',
-                skill: skillName,
+                oldText: oldText,
+                newText: skillName,
                 interactive: this.isInteractive
             });
+        } else {
+            logger.error('Skill span element not found within skill indicator!');
         }
     }
 
@@ -842,9 +921,20 @@ class MainWindowUI {
 // Initialize when DOM is ready
 let mainWindowUI;
 if (typeof document !== 'undefined') {
+    console.log('Main window JavaScript loading...');
+    
+    // Add immediate visual indicator that script is loading
+    const style = document.createElement('style');
+    document.head.appendChild(style);
+    
     document.addEventListener('DOMContentLoaded', () => {
+        console.log('DOM Content Loaded - initializing MainWindowUI...');
+                
         mainWindowUI = new MainWindowUI();
+        // Make it globally accessible for debugging
+        window.mainWindowUI = mainWindowUI;
+        console.log('MainWindowUI initialized and available as window.mainWindowUI');
     });
 }
 
-module.exports = MainWindowUI;
+// module.exports = MainWindowUI; // Not needed in browser context

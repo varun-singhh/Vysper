@@ -106,6 +106,7 @@ contextBridge.exposeInMainWorld('api', {
             'recording-state-changed',
             'interaction-mode-changed',
             'skill-updated',
+            'update-skill',
             'recording-started',
             'recording-stopped'
         ];

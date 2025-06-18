@@ -32,7 +32,7 @@ class WindowManager {
     
     this.windowConfigs = {
       main: {
-        width: 400,
+        width: 520,
         height: 35,
         useContentSize: true,
         file: 'index.html',
@@ -121,7 +121,10 @@ class WindowManager {
     this.windows.set('main', window);
     this.isVisible = true;
     
-    // Wait a moment for app to fully initialize and detect current desktop
+    // DevTools can be opened manually if needed for debugging
+    // window.webContents.openDevTools({ mode: 'detach' });
+    
+    // Wait for app to fully initialize and detect current desktop
     setTimeout(() => {
       this.showOnCurrentDesktop(window);
     }, 100);
@@ -184,6 +187,7 @@ class WindowManager {
         nodeIntegration: false,
         contextIsolation: true,
         backgroundThrottling: false,
+        devTools: true, // Enable DevTools for debugging
       },
       show: false, // Never show during creation, use showOnCurrentDesktop instead
       title: windowConfig.title,
