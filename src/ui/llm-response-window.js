@@ -170,93 +170,96 @@ class LLMResponseWindowUI {
 
   handleDisplayResponse(data) {
     try {
-        logger.info('LLM Response received - START', {
-            component: 'LLMResponseWindowUI',
-            dataExists: !!data,
-            timestamp: new Date().toISOString()
-        });
-        
-        // Comprehensive data validation
-        if (!data || typeof data !== 'object') {
-            throw new Error('Invalid data: expected object, received ' + typeof data);
-        }
-        
-        const response = data.content || data.response;
-        if (!response || typeof response !== 'string') {
-            throw new Error('Invalid response: expected string content');
-        }
-        
-        if (response.trim().length === 0) {
-            throw new Error('Empty response content');
-        }
-        
-        logger.info('Valid response data found', {
-            component: 'LLMResponseWindowUI',
-            responseLength: response.length
-        });
-        
-        // Rest of the method...
-        if (window.innerWidth < 500 || window.innerHeight < 300) {
-            this.handleWindowExpansion(data);
-        } else {
-            this.displayResponseContent(data);
-        }
-        
+      logger.info("LLM Response received - START", {
+        component: "LLMResponseWindowUI",
+        dataExists: !!data,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Comprehensive data validation
+      if (!data || typeof data !== "object") {
+        throw new Error(
+          "Invalid data: expected object, received " + typeof data
+        );
+      }
+
+      const response = data.content || data.response;
+      if (!response || typeof response !== "string") {
+        throw new Error("Invalid response: expected string content");
+      }
+
+      if (response.trim().length === 0) {
+        throw new Error("Empty response content");
+      }
+
+      logger.info("Valid response data found", {
+        component: "LLMResponseWindowUI",
+        responseLength: response.length,
+      });
+
+      // Rest of the method...
+      if (window.innerWidth < 500 || window.innerHeight < 300) {
+        this.handleWindowExpansion(data);
+      } else {
+        this.displayResponseContent(data);
+      }
     } catch (error) {
-        logger.error('Failed to handle display response', {
-            component: 'LLMResponseWindowUI',
-            error: error.message,
-            stack: error.stack
-        });
-        
-        this.hideLoadingState();
-        this.displayErrorMessage(`Error processing response: ${error.message}`);
+      logger.error("Failed to handle display response", {
+        component: "LLMResponseWindowUI",
+        error: error.message,
+        stack: error.stack,
+      });
+
+      this.hideLoadingState();
+      this.displayErrorMessage(`Error processing response: ${error.message}`);
     }
-}
+  }
 
   async handleWindowExpansion(data) {
     try {
-        logger.debug('Window appears to be compact size, requesting expansion', {
-            component: 'LLMResponseWindowUI'
-        });
-        
-        const response = data.content || data.response;
-        if (!response) {
-            throw new Error('No response data available for expansion calculation');
-        }
+      logger.debug("Window appears to be compact size, requesting expansion", {
+        component: "LLMResponseWindowUI",
+      });
 
-        const codeBlocks = this.extractCodeBlocks(response);
-        const contentMetrics = this.calculateContentMetrics(response, codeBlocks);
-        
-        const { ipcRenderer } = require('electron');
-        
-        // Add timeout to prevent hanging
-        const expansionPromise = ipcRenderer.invoke('expand-llm-window', contentMetrics);
-        const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Window expansion timeout')), 5000)
-        );
-        
-        const result = await Promise.race([expansionPromise, timeoutPromise]);
-        
-        logger.debug('Window expansion completed', {
-            component: 'LLMResponseWindowUI',
-            result
-        });
-        
-        // Use a more reliable delay mechanism
-        await new Promise(resolve => setTimeout(resolve, 200));
-        this.displayResponseContent(data);
-        
+      const response = data.content || data.response;
+      if (!response) {
+        throw new Error("No response data available for expansion calculation");
+      }
+
+      const codeBlocks = this.extractCodeBlocks(response);
+      const contentMetrics = this.calculateContentMetrics(response, codeBlocks);
+
+      const { ipcRenderer } = require("electron");
+
+      // Add timeout to prevent hanging
+      const expansionPromise = ipcRenderer.invoke(
+        "expand-llm-window",
+        contentMetrics
+      );
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Window expansion timeout")), 5000)
+      );
+
+      const result = await Promise.race([expansionPromise, timeoutPromise]);
+
+      logger.debug("Window expansion completed", {
+        component: "LLMResponseWindowUI",
+        result,
+      });
+
+      // Use a more reliable delay mechanism
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      this.displayResponseContent(data);
     } catch (error) {
-        logger.error('Failed to expand window', {
-            component: 'LLMResponseWindowUI',
-            error: error.message
-        });
-        
-        // Fallback to display content without expansion
-        this.displayResponseContent(data);
+      logger.error("Failed to expand window", {
+        component: "LLMResponseWindowUI",
+        error: error.message,
+      });
+
+      // Fallback to display content without expansion
+      this.displayResponseContent(data);
     }
-}
+  }
 
   displayResponseContent(data) {
     try {
@@ -746,6 +749,12 @@ class LLMResponseWindowUI {
       if (element) {
         element.style.scrollBehavior = "smooth";
 
+        // Remove any existing listeners first to prevent duplicates
+        element.removeEventListener("mouseenter", this.handleMouseEnter);
+        element.removeEventListener("mouseleave", this.handleMouseLeave);
+        element.removeEventListener("wheel", this.handleWheelScroll);
+
+        // Add listeners with proper binding
         element.addEventListener("mouseenter", this.handleMouseEnter, {
           passive: true,
         });
@@ -757,6 +766,61 @@ class LLMResponseWindowUI {
         });
       }
     });
+  }
+
+  destroy() {
+    try {
+      // Remove all event listeners
+      this.disableScrolling();
+
+      // Remove keyboard handlers
+      document.removeEventListener("keydown", this.handleKeyDown);
+
+      // Clear any pending timeouts (you'd need to track these)
+      // clearTimeout(this.expansionTimeout);
+
+      // Clear references
+      this.scrollableElements = [];
+      this.elements = {};
+
+      logger.info("LLMResponseWindowUI destroyed", {
+        component: "LLMResponseWindowUI",
+      });
+    } catch (error) {
+      logger.error("Error during cleanup", {
+        component: "LLMResponseWindowUI",
+        error: error.message,
+      });
+    }
+  }
+
+  // Add method to check if dependencies are available
+  checkDependencies() {
+    const missing = [];
+
+    if (typeof marked === "undefined") {
+      missing.push("marked");
+    }
+
+    if (typeof Prism === "undefined") {
+      missing.push("Prism");
+    }
+
+    try {
+      require("electron");
+    } catch (e) {
+      missing.push("electron");
+    }
+
+    if (missing.length > 0) {
+      logger.warn("Missing dependencies", {
+        component: "LLMResponseWindowUI",
+        missing: missing,
+      });
+      return false;
+    }
+
+    return true;
   }
 
   disableScrolling() {
@@ -798,11 +862,15 @@ class LLMResponseWindowUI {
   }
 }
 
-// Initialize when DOM is ready
-// COMMENTED OUT: Preventing conflict with HTML inline script
-// let llmResponseWindowUI;
-// document.addEventListener('DOMContentLoaded', () => {
-//     llmResponseWindowUI = new LLMResponseWindowUI();
-// });
+// Initialize when DOM is ready - Re-enabled for better error handling
+let llmResponseWindowUI;
+document.addEventListener('DOMContentLoaded', () => {
+    llmResponseWindowUI = new LLMResponseWindowUI();
+    
+    // Global access for debugging
+    window.llmResponseWindowUI = llmResponseWindowUI;
+    
+    console.log('LLMResponseWindowUI class initialized alongside HTML script');
+});
 
 module.exports = LLMResponseWindowUI;

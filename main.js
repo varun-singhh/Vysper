@@ -246,6 +246,18 @@ class ApplicationController {
       });
       return { success: true };
     });
+
+    // LLM window specific handlers
+    ipcMain.handle('expand-llm-window', (event, contentMetrics) => {
+      windowManager.expandLLMWindow(contentMetrics);
+      return { success: true, contentMetrics };
+    });
+
+    ipcMain.handle('resize-llm-window-for-content', (event, contentMetrics) => {
+      // Use the same expansion logic for now, can be enhanced later
+      windowManager.expandLLMWindow(contentMetrics);
+      return { success: true, contentMetrics };
+    });
   }
 
   async triggerScreenshotOCR() {

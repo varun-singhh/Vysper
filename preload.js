@@ -39,6 +39,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restartAppForStealth: () => ipcRenderer.invoke('restart-app-for-stealth'),
   closeWindow: () => ipcRenderer.invoke('close-window'),
   
+  // LLM window specific methods
+  expandLlmWindow: (contentMetrics) => ipcRenderer.invoke('expand-llm-window', contentMetrics),
+  resizeLlmWindowForContent: (contentMetrics) => ipcRenderer.invoke('resize-llm-window-for-content', contentMetrics),
+  
   // Event listeners
   onTranscriptionReceived: (callback) => ipcRenderer.on('transcription-received', callback),
   onSessionEvent: (callback) => ipcRenderer.on('session-event', callback),
@@ -49,6 +53,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onLlmError: (callback) => ipcRenderer.on('llm-error', callback),
   onOpenGeminiConfig: (callback) => ipcRenderer.on('open-gemini-config', callback),
   onDisplayLlmResponse: (callback) => ipcRenderer.on('display-llm-response', callback),
+  onShowLoading: (callback) => ipcRenderer.on('show-loading', callback),
   onSkillChanged: (callback) => ipcRenderer.on('skill-changed', callback),
   onInteractionModeChanged: (callback) => ipcRenderer.on('set-interactive', callback),
   

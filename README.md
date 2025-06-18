@@ -295,28 +295,21 @@ await window.electronAPI.clearSessionMemory()
 ## ⌨️ Keyboard Shortcuts
 
 ### Global Controls
-- `Cmd+Shift+S` - Take screenshot with OCR and AI analysis
-- `Cmd+\` - Toggle window visibility (stealth mode)
-- `Option+A` - Toggle window interactivity
-- `Cmd+Shift+V` - Show/hide all windows
-- `Cmd+Shift+I` - Toggle interaction mode
+- `Cmd+H` - Take screenshot and AI analysis
+- `Cmd+\` - Show/hide all windows
+- `Option+A` - Toggle interaction mode
 
 ### Speech Recognition
 - `Cmd+R` - Start/stop speech recording
-- `Cmd+Shift+R` - Force stop speech recording
+- `Cmd+R` - Force stop speech recording if already in progress
 
 ### Window Navigation
-- `Cmd+Shift+C` - Switch to Chat window
-- `Cmd+Shift+K` - Switch to Skills window
+- `Option+1` - Switch to Chat window
 - `Cmd+Arrow Keys` - Move active window
 
 ### Session Management
-- `Option+H` - View session history
 - `Option+;` - Clear session memory
 
-### AI Configuration
-- `Alt+G` - Open Gemini configuration
-- `Alt+T` - Test AI connection
 
 ## 🏗 Architecture
 

@@ -45,8 +45,8 @@ class WindowManager {
         title: 'Skills'
       },
       llmResponse: {
-        width: 600,
-        height: 400,
+        width: 840,
+        height: 480,
         file: 'llm-response.html',
         title: 'AI Response',
         alwaysOnTop: true
@@ -215,8 +215,28 @@ class WindowManager {
         }),
         level: process.platform === 'darwin' ? 'floating' : undefined,
       };
+    } else if (type === 'llmResponse') {
+      // LLM Response window - completely frameless, just content
+      browserWindowOptions = {
+        ...baseOptions,
+        frame: false,
+        titleBarStyle: 'hidden',
+        transparent: true,
+        backgroundColor: '#00000000',
+        resizable: true,
+        minimizable: false,
+        maximizable: false,
+        closable: false,
+        hasShadow: false,
+        thickFrame: false,
+        ...(process.platform === 'darwin' && {
+          titleBarStyle: 'hiddenInset',
+          trafficLightPosition: { x: -100, y: -100 }
+        }),
+        level: process.platform === 'darwin' ? 'floating' : undefined,
+      };
     } else {
-      // Other windows (chat, skills, llmResponse)
+      // Other windows (chat, skills)
       browserWindowOptions = {
         ...baseOptions,
         minWidth: config.get('window.minWidth'),
@@ -308,7 +328,7 @@ class WindowManager {
       main: { x: 50, y: 50 },
       chat: { x: screenWidth - 550, y: 50 },
       skills: { x: 50, y: screenHeight - 650 },
-      llmResponse: { x: screenWidth / 2 - 300, y: screenHeight / 2 - 200 },
+      llmResponse: { x: screenWidth / 2 - 420, y: screenHeight / 2 - 240 },
       settings: { x: screenWidth / 2 - 300, y: screenHeight / 2 - 350 }
     };
 
@@ -554,8 +574,6 @@ class WindowManager {
     logger.debug('Showing and focusing LLM window');
     llmWindow.show();
     llmWindow.focus();
-
-    logger.debug(content);
     
     logger.info('LLM response displayed', {
       contentLength: content.length,
