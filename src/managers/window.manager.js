@@ -306,12 +306,10 @@ class WindowManager {
     }
 
     // Make window undetectable by screen capture
-    if (type === 'main') {
-      try {
-        window.setContentProtection(true);
-      } catch (error) {
-        logger.debug('Content protection not supported on this platform');
-      }
+    try {
+      window.setContentProtection(true);
+    } catch (error) {
+      logger.debug('Content protection not supported on this platform');
     }
 
     window.setVisibleOnAllWorkspaces(true);
