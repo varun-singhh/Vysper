@@ -1,3 +1,10 @@
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/186d5458-7e8b-406a-9adc-ce755256298c" 
+       alt="Group 14" 
+       width="300" 
+       style="padding: 10px; border-radius: 8px;"/>
+</p>
+
 # Vysper
 
 **Professional Interview Assistant with Invisible Screen Overlay**
