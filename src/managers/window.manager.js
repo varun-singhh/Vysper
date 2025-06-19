@@ -36,7 +36,7 @@ class WindowManager {
         height: 35,
         useContentSize: true,
         file: 'index.html',
-        title: 'Wysper'
+        title: 'Vysper'
       },
       chat: {
         width: 500,

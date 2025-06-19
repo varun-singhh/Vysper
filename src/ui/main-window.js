@@ -881,7 +881,7 @@ class MainWindowUI {
             document.body.removeChild(menu);
         });
 
-        const quitOption = this.createMenuItem('Quit Wysper', 'fa-power-off', () => {
+        const quitOption = this.createMenuItem('Quit Vysper', 'fa-power-off', () => {
             if (window.electronAPI) {
                 window.electronAPI.quitApp();
             }

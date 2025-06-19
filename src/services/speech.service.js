@@ -526,7 +526,6 @@ class SpeechService extends EventEmitter {
                  confidence: e.result.properties?.getProperty(sdk.PropertyId.SpeechServiceResponse_JsonResult)
                });
                
-               console.log('🗣️ SPEECH RECOGNIZED:', e.result.text);
                this.emit('transcription', e.result.text);
              } else {
                logger.debug('Empty transcription result ignored', {

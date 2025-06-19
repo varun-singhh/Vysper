@@ -1,4 +1,4 @@
-# Wysper
+# Vysper
 
 **Professional Interview Assistant with Invisible Screen Overlay**
 
@@ -26,9 +26,86 @@ An AI-powered desktop tool that helps you excel in technical and professional in
 ### Installation
 ```bash
 git clone <repository-url>
-cd Wysper
+cd Vysper
 npm install
 npm start
+```
+
+### Build Distributable App
+
+#### Step-by-Step Build Process
+1. **Clone and Setup** (first time only):
+   ```bash
+   git clone <repository-url>
+   cd Vysper
+   npm install
+   ```
+
+2. **Create Your Build**:
+   ```bash
+   # For your current platform (recommended)
+   npm run build
+   
+   # Or specific platforms
+   npm run build:mac      # macOS (.dmg + .zip)
+   npm run build:win      # Windows (.exe installer + portable)
+   npm run build:linux    # Linux (.AppImage + .deb)
+   npm run build:all      # All platforms
+   ```
+
+3. **Find Your App**: Built files appear in `dist/` folder
+
+#### Build Commands Reference
+```bash
+# Basic builds
+npm run build          # Current platform
+npm run build:mac      # macOS (.dmg + .zip)
+npm run build:win      # Windows (.exe installer + portable)
+npm run build:linux    # Linux (.AppImage + .deb)
+npm run build:all      # All platforms
+
+# Development & testing
+npm run pack           # Quick build for testing (no compression)
+npm run clean          # Clean dist/ folder
+npm run rebuild        # Clean + build current platform
+npm run release        # Clean + build all platforms
+```
+
+#### Build Time Expectations
+- **First build**: 2-5 minutes (downloads Electron binaries)
+- **Subsequent builds**: 30-60 seconds
+- **All platforms**: 3-8 minutes depending on internet speed
+
+**Built apps will be in the `dist/` folder:**
+- **macOS**: `Vysper-1.0.0.dmg` (installer) or `Vysper-1.0.0-mac.zip` (portable)
+- **Windows**: `Vysper Setup 1.0.0.exe` (installer) or `Vysper 1.0.0.exe` (portable)
+- **Linux**: `Vysper-1.0.0.AppImage` (portable) or `Vysper_1.0.0_amd64.deb` (installer)
+
+### Installing Built Apps
+- **macOS**: Double-click `.dmg` file → Drag to Applications folder
+- **Windows**: Run `.exe` installer or double-click portable version
+- **Linux**: Make `.AppImage` executable (`chmod +x`) and run, or install `.deb` with `dpkg`
+
+### Sharing with Others
+The built apps are **standalone** - no need for Node.js, npm, or any dependencies!
+- Share the `.dmg`/`.exe`/`.AppImage` files directly
+- Recipients can run immediately after installation
+- Apps work offline (except for AI features requiring internet)
+
+### Build Troubleshooting
+**Common Issues:**
+- **"electron-builder not found"**: Run `npm install` first
+- **"Package electron is only allowed in devDependencies"**: Already fixed in package.json
+- **Build fails on Windows**: Install Visual Studio Build Tools
+- **Build fails on Linux**: Install `rpm` package (`sudo apt install rpm` on Ubuntu)
+- **Large build size**: Normal for Electron apps (90-100MB)
+- **Code signing warnings**: Safe to ignore for personal use
+
+**Clean Build Process:**
+```bash
+rm -rf node_modules dist
+npm install
+npm run build
 ```
 
 ### Essential Setup
@@ -77,12 +154,11 @@ GEMINI_API_KEY=your_gemini_api_key
 * Click thorugh screen works only when interaction mode is disabled
 * In **Stealth Mode**, windows are invisible to screen share & mouse.
 
-
 ## 🔧 Key Features
 
 ### Stealth Technology
 - **Invisible to Screen Sharing** - Completely hidden from Zoom, Teams, Meet
-- **Process Disguise** - Appears as "WindowServer" in system monitors
+- **Process Disguise** - Appears as "Vysper" in system monitors
 - **Click-through Mode** - Windows become transparent to mouse clicks
 - **No Screen Recording Detection** - Undetectable by recording software
 
@@ -101,7 +177,7 @@ GEMINI_API_KEY=your_gemini_api_key
 ## 💡 Pro Tips
 
 ### During Technical Interviews
-1. **Position Windows**: Place Wysper windows in screen corners before sharing
+1. **Position Windows**: Place Vysper windows in screen corners before sharing
 2. **Use Voice Mode**: Whisper questions during "thinking time"
 3. **Screenshot Problems**: Capture coding challenges for instant solutions
 4. **Check Solutions**: Verify your approach with AI before implementing
@@ -140,7 +216,7 @@ Extend with your own interview categories by adding prompt files to `/prompts/` 
 
 ## 🤝 Contributing
 
-**Help make Wysper the ultimate interview companion!**
+**Help make Vysper the ultimate interview companion!**
 
 We're looking for contributors to help expand this open-source project:
 
@@ -161,8 +237,8 @@ We're looking for contributors to help expand this open-source project:
 
 ### Getting Started
 ```bash
-git clone https://github.com/your-username/wysper
-cd wysper
+git clone https://github.com/your-username/Vysper
+cd Vysper
 npm install
 npm run dev
 ```
@@ -178,4 +254,4 @@ Every contribution helps job seekers worldwide perform better in interviews and 
 
 ---
 
-⭐ **Star this repo** if Wysper helped you ace your interviews!
+⭐ **Star this repo** if Vysper helped you ace your interviews!

@@ -44,7 +44,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restartAppForStealth: () => ipcRenderer.invoke('restart-app-for-stealth'),
   closeWindow: () => ipcRenderer.invoke('close-window'),
   quit: () => {
-    console.log('Quit called from electronAPI');
     try {
       ipcRenderer.send('quit-app');
       // Also try the app quit method
@@ -99,7 +98,6 @@ contextBridge.exposeInMainWorld('api', {
             'window-loaded'
         ];
         if (validChannels.includes(channel)) {
-            console.log('Sending IPC message:', channel, data);
             ipcRenderer.send(channel, data);
         } else {
             console.warn('Invalid IPC channel:', channel);

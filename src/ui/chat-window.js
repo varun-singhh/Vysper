@@ -1,6 +1,4 @@
 try {
-    console.log('🚀 CHAT-WINDOW.JS: Script loading...');
-
     // Check if we're in Node.js context or browser context
     let logger;
     try {
@@ -16,7 +14,6 @@ try {
 
 class ChatWindowUI {
     constructor() {
-        console.log('🏗️ CHAT-WINDOW: ChatWindowUI constructor called');
         this.isRecording = false;
         this.isInteractive = true; // Start in interactive mode
         this.elements = {};
@@ -78,7 +75,6 @@ class ChatWindowUI {
             
             // Speech recognition handlers
             window.electronAPI.onTranscriptionReceived((event, data) => {
-                console.log('🎤 Transcription received:', data);
                 if (data && data.text) {
                     this.handleTranscription(data.text);
                 } else {
@@ -89,7 +85,6 @@ class ChatWindowUI {
             // Listen for interim transcription (real-time)
             if (window.electronAPI.onInterimTranscription) {
                 window.electronAPI.onInterimTranscription((event, data) => {
-                    console.log('🔄 Interim transcription:', data);
                     if (data && data.text) {
                         this.showInterimText(data.text);
                     }
@@ -249,7 +244,6 @@ class ChatWindowUI {
     }
 
     handleTranscription(text) {
-        console.log('📝 Handling transcription:', text);
         if (text && text.trim()) {
             // Hide listening animation first
             this.hideListeningAnimation();
@@ -328,9 +322,7 @@ class ChatWindowUI {
         }
     }
 
-    addMessage(text, type = 'user') {
-        console.log(`💬 Adding message [${type}]:`, text);
-        
+    addMessage(text, type = 'user') {        
         if (!this.elements.chatMessages) {
             console.error('❌ Chat messages element not found!');
             return;
@@ -360,8 +352,6 @@ class ChatWindowUI {
         
         // Auto-scroll to bottom
         this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
-        
-        console.log('✅ Message added successfully, total messages:', this.elements.chatMessages.children.length);
     }
 
     formatMarkdown(text) {
@@ -448,8 +438,6 @@ class ChatWindowUI {
     }
 
     showListeningAnimation() {
-        console.log('🎵 Showing listening animation');
-        
         if (!this.elements.listeningContainer) {
             console.warn('❌ Listening container not found');
             return;
@@ -471,8 +459,6 @@ class ChatWindowUI {
     }
 
     hideListeningAnimation() {
-        console.log('🔇 Hiding listening animation');
-        
         if (this.elements.listeningContainer) {
             this.elements.listeningContainer.classList.remove('active');
         }
@@ -501,8 +487,6 @@ class ChatWindowUI {
     }
 
     showInterimText(text) {
-        console.log('🔄 Showing interim text:', text);
-        
         if (!this.elements.listeningContainer) return;
         
         // Find or create interim text element
@@ -538,16 +522,11 @@ class ChatWindowUI {
 }
 
     // Initialize when DOM is loaded
-    console.log('🌐 CHAT-WINDOW: Document ready state:', document.readyState);
-
     if (document.readyState === 'loading') {
-        console.log('⏳ CHAT-WINDOW: Waiting for DOMContentLoaded...');
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('✅ CHAT-WINDOW: DOMContentLoaded fired, creating ChatWindowUI');
             new ChatWindowUI();
         });
     } else {
-        console.log('✅ CHAT-WINDOW: DOM already loaded, creating ChatWindowUI immediately');
         new ChatWindowUI();
     }
 

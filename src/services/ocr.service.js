@@ -108,7 +108,7 @@ class OCRService {
   createTempFile(image) {
     const tempPath = path.join(
       config.get('ocr.tempDir'), 
-      `wysper-screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.png`
+      `Vysper-screenshot-${Date.now()}-${Math.random().toString(36).substr(2, 9)}.png`
     );
     
     const buffer = image.toPNG();

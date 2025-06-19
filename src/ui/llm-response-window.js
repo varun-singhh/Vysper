@@ -869,8 +869,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Global access for debugging
     window.llmResponseWindowUI = llmResponseWindowUI;
-    
-    console.log('LLMResponseWindowUI class initialized alongside HTML script');
 });
 
 module.exports = LLMResponseWindowUI;

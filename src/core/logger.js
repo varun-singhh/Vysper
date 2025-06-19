@@ -5,7 +5,7 @@ const os = require('os');
 
 class Logger {
   constructor() {
-    this.logDir = path.join(os.homedir(), '.wysper', 'logs');
+    this.logDir = path.join(os.homedir(), '.Vysper', 'logs');
     this.setupLogger();
   }
 

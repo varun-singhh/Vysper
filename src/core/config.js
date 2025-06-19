@@ -4,16 +4,16 @@ const os = require('os');
 class ConfigManager {
   constructor() {
     this.env = process.env.NODE_ENV || 'development';
-    this.appDataDir = path.join(os.homedir(), '.wysper');
+    this.appDataDir = path.join(os.homedir(), '.Vysper');
     this.loadConfiguration();
   }
 
   loadConfiguration() {
     this.config = {
       app: {
-        name: 'Wysper',
+        name: 'Vysper',
         version: '1.0.0',
-        processTitle: 'WindowServer',
+        processTitle: 'Vysper',
         dataDir: this.appDataDir,
         isDevelopment: this.env === 'development',
         isProduction: this.env === 'production'
