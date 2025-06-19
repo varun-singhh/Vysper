@@ -244,12 +244,10 @@ We're looking for contributors to help expand this open-source project:
 5. **Improve documentation** and add examples
 6. **Share your interview success stories**
 
-### Getting Started
-```bash
-git clone https://github.com/your-username/Vysper
-cd Vysper
-npm install
-npm run dev
-```
+
+### Demo
+https://github.com/user-attachments/assets/c5616482-3652-4686-b87b-e04d06572d2f
+
+
 
 ⭐ **Star this repo** if Vysper helped you ace your interviews or you vibed with it!
