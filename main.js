@@ -698,15 +698,21 @@ class ApplicationController {
       // Add user input to session memory
       sessionManager.addUserInput(text, 'llm_input');
 
+      // Check if current skill needs programming language context
+      const skillsRequiringProgrammingLanguage = ['programming', 'dsa', 'devops', 'system-design', 'data-science'];
+      const needsProgrammingLanguage = skillsRequiringProgrammingLanguage.includes(this.activeSkill);
+      
       const llmResult = await llmService.processTextWithSkill(
         text,
         this.activeSkill,
-        sessionHistory.recent
+        sessionHistory.recent,
+        needsProgrammingLanguage ? this.codingLanguage : null
       );
 
       logger.info("LLM processing completed, showing response", {
         responseLength: llmResult.response.length,
         skill: this.activeSkill,
+        programmingLanguage: needsProgrammingLanguage ? this.codingLanguage : 'not applicable',
         processingTime: llmResult.metadata.processingTime,
         responsePreview: llmResult.response.substring(0, 200) + "...",
       });
@@ -771,10 +777,15 @@ class ApplicationController {
         textPreview: cleanText.substring(0, 100) + "..."
       });
 
+      // Check if current skill needs programming language context
+      const skillsRequiringProgrammingLanguage = ['programming', 'dsa', 'devops', 'system-design', 'data-science'];
+      const needsProgrammingLanguage = skillsRequiringProgrammingLanguage.includes(this.activeSkill);
+
       const llmResult = await llmService.processTranscriptionWithIntelligentResponse(
         cleanText,
         this.activeSkill,
-        sessionHistory.recent
+        sessionHistory.recent,
+        needsProgrammingLanguage ? this.codingLanguage : null
       );
 
       // Add LLM response to session memory
@@ -791,6 +802,7 @@ class ApplicationController {
       logger.info("Transcription LLM response completed", {
         responseLength: llmResult.response.length,
         skill: this.activeSkill,
+        programmingLanguage: needsProgrammingLanguage ? this.codingLanguage : 'not applicable',
         processingTime: llmResult.metadata.processingTime
       });
 

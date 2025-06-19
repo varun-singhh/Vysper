@@ -207,16 +207,26 @@ class SessionManager {
   }
 
   /**
-   * Get skill-specific context
+   * Get skill-specific context with optional programming language support
+   * @param {string|null} skillName - Target skill name (defaults to current skill)
+   * @param {string|null} programmingLanguage - Optional programming language for injection
    */
-  getSkillContext(skillName = null) {
+  getSkillContext(skillName = null, programmingLanguage = null) {
     const targetSkill = skillName || this.currentSkill;
     
-    // Get skill prompt
-    const skillPrompt = this.sessionMemory.find(event => 
-      event.action === 'skill_prompt_initialization' && 
-      event.skill === targetSkill
-    );
+    // Get skill prompt with programming language injection if provided
+    let skillPrompt = null;
+    if (programmingLanguage && promptLoader.requiresProgrammingLanguage(targetSkill)) {
+      // Use prompt loader to get language-enhanced prompt
+      skillPrompt = promptLoader.getSkillPrompt(targetSkill, programmingLanguage);
+    } else {
+      // Find skill prompt from session memory (fallback)
+      const skillPromptEvent = this.sessionMemory.find(event => 
+        event.action === 'skill_prompt_initialization' && 
+        event.skill === targetSkill
+      );
+      skillPrompt = skillPromptEvent?.content || null;
+    }
     
     // Get recent events for this skill
     const skillEvents = this.sessionMemory
@@ -224,9 +234,11 @@ class SessionManager {
       .slice(-10);
     
     return {
-      skillPrompt: skillPrompt?.content || null,
+      skillPrompt,
       recentEvents: skillEvents,
-      currentSkill: targetSkill
+      currentSkill: targetSkill,
+      programmingLanguage,
+      requiresProgrammingLanguage: promptLoader.requiresProgrammingLanguage(targetSkill)
     };
   }
 

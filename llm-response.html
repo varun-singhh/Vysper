@@ -439,11 +439,14 @@
             
             if (loadingElement) {
                 loadingElement.classList.remove('hidden');
+                loadingElement.style.display = ''; // Remove any forced display styles
             }
             
             if (responseElement) {
                 responseElement.classList.add('hidden');
             }
+            
+            console.log('Loading state shown - should see Analyzing...');
         }
 
         function hideLoadingState() {
@@ -451,8 +454,9 @@
             if (loadingElement) {
                 loadingElement.classList.add('hidden');
                 loadingElement.style.display = 'none'; // Force hide
+                console.log('Loading state hidden');
             } else {
-                logger.error('Loading element not found!');
+                console.error('Loading element not found!');
             }
         }
 
@@ -753,7 +757,7 @@
             const isLoadingHidden = loadingElement ? loadingElement.classList.contains('hidden') : true;
             const isContentVisible = responseElement ? !responseElement.classList.contains('hidden') : false;
             
-            logger.info('Display state verification:', {
+            console.log('Display state verification:', {
                 loadingHidden: isLoadingHidden,
                 contentVisible: isContentVisible,
                 windowVisible: !document.hidden
