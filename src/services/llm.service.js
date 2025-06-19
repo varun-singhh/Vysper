@@ -308,7 +308,7 @@ class LLMService {
       contents: [],
       generationConfig: {
         temperature: 0.7,
-        maxOutputTokens: 150, // Shorter responses for transcriptions
+        maxOutputTokens: 2048, // Full responses for transcriptions (same as regular processing)
         topK: 40,
         topP: 0.95
       }
@@ -343,7 +343,7 @@ class LLMService {
       contents: [],
       generationConfig: {
         temperature: 0.7,
-        maxOutputTokens: 150, // Shorter responses for transcriptions
+        maxOutputTokens: 2048, // Full responses for transcriptions (same as regular processing)
         topK: 40,
         topP: 0.95
       }
@@ -428,8 +428,10 @@ Always respond to the point, do not repeat the question or unnecessary informati
 - Or similar brief acknowledgments like: "I'm here, what's your ${activeSkill} question?"
 
 ### If the transcription IS relevant to ${activeSkill} or is a follow-up question:
-- Provide a Very Detailed response in bullet points
-- Focus on actionable insights
+- Provide a comprehensive, detailed response
+- Use bullet points, examples, and explanations
+- Focus on actionable insights and complete answers
+- Do not truncate or shorten your response
 
 ### Examples of casual/irrelevant messages:
 - "Hello", "Hi there", "How are you?"
@@ -503,6 +505,7 @@ Remember: Be intelligent about filtering - only provide detailed responses when 
           responseLength: responseText.length
         });
 
+        console.log("🚀 LLM-SERVICE: Gemini API request successful", responseText.trim());
         return responseText.trim();
       } catch (error) {
         const errorInfo = this.analyzeError(error);

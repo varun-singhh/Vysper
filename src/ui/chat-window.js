@@ -257,7 +257,6 @@ class ChatWindowUI {
             // Show transcribed text with a slight delay for smooth transition
             setTimeout(() => {
                 this.addMessage(text, 'transcription');
-                console.log('✅ Transcription message added to chat');
                 
                 // Show thinking indicator after transcription
                 setTimeout(() => {
@@ -368,19 +367,44 @@ class ChatWindowUI {
     formatMarkdown(text) {
         if (!text) return '';
         
-        return text
-            // Convert bullet points
-            .replace(/^[•\-\*]\s+(.+)$/gm, '<div class="bullet-point">• $1</div>')
-            // Convert numbered lists
-            .replace(/^\d+\.\s+(.+)$/gm, '<div class="numbered-point">$1</div>')
-            // Convert bold text
-            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-            // Convert italic text
-            .replace(/\*(.+?)\*/g, '<em>$1</em>')
-            // Convert inline code
-            .replace(/`(.+?)`/g, '<code>$1</code>')
-            // Convert line breaks
-            .replace(/\n/g, '<br>');
+        try {
+            // Use the markdown.js library for proper markdown parsing
+            // Try to access markdown library in different contexts
+            let markdownLib;
+            
+            // First try global markdown object (from script tag)
+            if (typeof markdown !== 'undefined' && markdown.toHTML) {
+                markdownLib = markdown;
+            }
+            // Then try require (Node.js context)
+            else if (typeof require !== 'undefined') {
+                try {
+                    markdownLib = require('markdown');
+                } catch (requireError) {
+                    logger.debug('Could not require markdown library:', requireError.message);
+                }
+            }
+            // Finally try window.markdown (browser context)
+            else if (typeof window !== 'undefined' && window.markdown) {
+                markdownLib = window.markdown;
+            }
+            
+            if (markdownLib && markdownLib.toHTML) {
+                return markdownLib.toHTML(text);
+            } else {
+                logger.warn('Markdown library not available, falling back to basic formatting');
+                // Fallback to basic formatting
+                return text
+                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                    .replace(/`(.+?)`/g, '<code>$1</code>')
+                    .replace(/\n/g, '<br>');
+            }
+        } catch (error) {
+            logger.warn('Failed to parse markdown, falling back to plain text', { error: error.message });
+            // Fallback to basic formatting
+            return text.replace(/\n/g, '<br>');
+        }
     }
 
     showThinkingIndicator() {

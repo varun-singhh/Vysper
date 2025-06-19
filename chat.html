@@ -42,6 +42,7 @@
         background: rgba(0, 0, 0, 0.2);
         backdrop-filter: blur(10px);
         cursor: move;
+        flex-shrink: 0;
       }
       .header-title {
         color: rgba(255, 255, 255, 0.95);
@@ -82,8 +83,8 @@
         overflow-y: auto;
         overflow-x: hidden;
         -webkit-app-region: no-drag;
-        max-height: calc(100vh - 120px);
         box-sizing: border-box;
+        /* Removed max-height restriction */
       }
       .message {
         margin-bottom: 16px;
@@ -92,11 +93,9 @@
         border-radius: 8px;
         border-left: 3px solid rgba(255, 255, 255, 0.2);
         backdrop-filter: blur(5px);
-        min-height: auto;
-        height: auto;
-        overflow: visible;
         word-wrap: break-word;
         word-break: break-word;
+        /* Removed all height restrictions */
       }
       .message.transcription {
         background: rgba(76, 175, 80, 0.15);
@@ -142,9 +141,41 @@
       .message.assistant {
         background: rgba(156, 39, 176, 0.1);
         border-left: 3px solid #9c27b0;
-        min-height: auto;
-        height: auto;
-        overflow: visible;
+        /* Removed all height restrictions and overflow hidden */
+        display: block;
+      }
+      
+      .message.assistant .message-text {
+        /* Removed all height restrictions and overflow hidden */
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      /* Ensure all content in assistant messages is fully visible */
+      .message.assistant *,
+      .message.assistant .bullet-point,
+      .message.assistant .numbered-point,
+      .message.assistant strong,
+      .message.assistant em,
+      .message.assistant code,
+      .message.assistant pre,
+      .message.assistant ul,
+      .message.assistant ol,
+      .message.assistant li,
+      .message.assistant h1,
+      .message.assistant h2,
+      .message.assistant h3,
+      .message.assistant h4,
+      .message.assistant h5,
+      .message.assistant h6,
+      .message.assistant p,
+      .message.assistant blockquote {
+        /* Remove all height restrictions */
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
       }
       
       /* Markdown formatting for assistant messages */
@@ -197,6 +228,72 @@
         font-family: 'Monaco', 'Menlo', monospace;
         font-size: 11px;
         color: #64ffda;
+        display: inline;
+      }
+      
+      /* Ensure code blocks are fully visible */
+      .message.assistant pre {
+        background: rgba(0, 0, 0, 0.4);
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-family: 'Monaco', 'Menlo', monospace;
+        font-size: 11px;
+        color: #64ffda;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        margin: 8px 0;
+      }
+      
+      .message.assistant pre code {
+        background: transparent;
+        padding: 0;
+        border-radius: 0;
+      }
+      
+      /* Ensure lists are fully visible */
+      .message.assistant ul,
+      .message.assistant ol {
+        margin: 8px 0;
+        padding-left: 20px;
+      }
+      
+      .message.assistant li {
+        margin: 4px 0;
+        line-height: 1.4;
+      }
+      
+      /* Ensure headings are fully visible */
+      .message.assistant h1,
+      .message.assistant h2,
+      .message.assistant h3,
+      .message.assistant h4,
+      .message.assistant h5,
+      .message.assistant h6 {
+        margin: 12px 0 8px 0;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 1);
+      }
+      
+      .message.assistant h1 { font-size: 16px; }
+      .message.assistant h2 { font-size: 15px; }
+      .message.assistant h3 { font-size: 14px; }
+      .message.assistant h4,
+      .message.assistant h5,
+      .message.assistant h6 { font-size: 13px; }
+      
+      /* Ensure paragraphs are fully visible */
+      .message.assistant p {
+        margin: 8px 0;
+      }
+      
+      /* Ensure blockquotes are fully visible */
+      .message.assistant blockquote {
+        border-left: 3px solid rgba(156, 39, 176, 0.5);
+        padding-left: 12px;
+        margin: 8px 0;
+        font-style: italic;
+        color: rgba(255, 255, 255, 0.8);
       }
       
       /* Thinking indicator animation */
@@ -264,6 +361,7 @@
         -webkit-app-region: no-drag;
         background: rgba(0, 0, 0, 0.2);
         backdrop-filter: blur(10px);
+        flex-shrink: 0;
       }
       .input-container {
         display: flex;
@@ -542,7 +640,7 @@
         </div>
       </div>
     </div>
-
+    <script src="lib/markdown.js"></script> 
     <script>
       // Use electronAPI from preload script instead of direct require
       const whysperAPI = window.electronAPI;
@@ -593,23 +691,28 @@
         chatMessages.scrollTop = chatMessages.scrollHeight;
       }
 
-      // Simple markdown formatter for assistant messages
+      // Markdown formatter using markdown.js library
       function formatMarkdown(text) {
         if (!text) return '';
         
-        return text
-          // Convert bullet points
-          .replace(/^[•\-\*]\s+(.+)$/gm, '<div class="bullet-point">• $1</div>')
-          // Convert numbered lists
-          .replace(/^\d+\.\s+(.+)$/gm, '<div class="numbered-point">$1</div>')
-          // Convert bold text
-          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-          // Convert italic text
-          .replace(/\*(.+?)\*/g, '<em>$1</em>')
-          // Convert inline code
-          .replace(/`(.+?)`/g, '<code>$1</code>')
-          // Convert line breaks
-          .replace(/\n/g, '<br>');
+        try {
+          // Use the markdown.js library for proper markdown parsing
+          if (typeof markdown !== 'undefined' && markdown.toHTML) {
+            return markdown.toHTML(text);
+          } else {
+            console.warn('Markdown library not loaded, falling back to basic formatting');
+            // Fallback to basic formatting if library fails to load
+            return text
+              .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+              .replace(/\*(.+?)\*/g, '<em>$1</em>')
+              .replace(/`(.+?)`/g, '<code>$1</code>')
+              .replace(/\n/g, '<br>');
+          }
+        } catch (error) {
+          console.error('Markdown parsing failed:', error);
+          // Fallback to basic HTML escaping
+          return text.replace(/\n/g, '<br>');
+        }
       }
 
       // Show thinking indicator

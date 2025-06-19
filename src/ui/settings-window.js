@@ -1,6 +1,4 @@
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('Settings window loaded');
-    
+document.addEventListener('DOMContentLoaded', () => {    
     // Get DOM elements
     const closeButton = document.getElementById('closeButton');
     const quitButton = document.getElementById('quitButton');
@@ -22,7 +20,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const requestCurrentSettings = () => {
         if (window.electronAPI && window.electronAPI.getSettings) {
             window.electronAPI.getSettings().then(settings => {
-                console.log('Current settings received:', settings);
                 loadSettingsIntoUI(settings);
             }).catch(error => {
                 console.error('Failed to get settings:', error);
@@ -33,7 +30,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Close button handler
     if (closeButton) {
         closeButton.addEventListener('click', () => {
-            console.log('Close button clicked');
             window.api.send('close-settings');
         });
     }
@@ -41,7 +37,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Quit button handler with multiple attempts
     if (quitButton) {
         quitButton.addEventListener('click', () => {
-            console.log('Quit button clicked');
             try {
                 // Try multiple ways to quit the app
                 if (window.api && window.api.send) {
@@ -67,7 +62,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Function to load settings into UI
     const loadSettingsIntoUI = (settings) => {
-        console.log('Loading settings into UI:', settings);
         if (settings.azureKey && azureKeyInput) azureKeyInput.value = settings.azureKey;
         if (settings.azureRegion && azureRegionInput) azureRegionInput.value = settings.azureRegion;
         if (settings.geminiKey && geminiKeyInput) geminiKeyInput.value = settings.geminiKey;
@@ -82,7 +76,6 @@ document.addEventListener('DOMContentLoaded', () => {
             iconOptions.forEach(option => {
                 if (option.dataset.icon === selectedIcon) {
                     option.classList.add('selected');
-                    console.log('Selected icon set to:', selectedIcon);
                 } else {
                     option.classList.remove('selected');
                 }
@@ -92,14 +85,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Load settings when window opens
     window.api.receive('load-settings', (settings) => {
-        console.log('Loading settings via load-settings event:', settings);
         loadSettingsIntoUI(settings);
     });
 
     // Listen for settings window shown event
     if (window.electronAPI && window.electronAPI.receive) {
         window.electronAPI.receive('settings-window-shown', () => {
-            console.log('Settings window shown, requesting current settings');
             requestCurrentSettings();
         });
     }
@@ -114,7 +105,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (codingLanguageSelect) settings.codingLanguage = codingLanguageSelect.value;
         if (activeSkillSelect) settings.activeSkill = activeSkillSelect.value;
         
-        console.log('Saving settings:', settings);
         window.api.send('save-settings', settings);
     };
 
@@ -136,7 +126,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Language selection handler
     if (codingLanguageSelect) {
         codingLanguageSelect.addEventListener('change', (e) => {
-            console.log('Language changed to:', e.target.value);
             saveSettings();
         });
     }
@@ -144,7 +133,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // Skill selection handler
     if (activeSkillSelect) {
         activeSkillSelect.addEventListener('change', (e) => {
-            console.log('Skill changed to:', e.target.value);
             saveSettings();
             // Also update the main window
             window.api.send('update-skill', e.target.value);
@@ -172,7 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
             img.src = icon.src;
             img.alt = icon.name;
             img.onload = () => {
-                console.log('Icon loaded successfully:', icon.src);
+                logger.info('Icon loaded successfully:', icon.src);
             };
             img.onerror = () => {
                 console.error('Failed to load icon:', icon.src);
@@ -195,7 +183,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 };
                 
                 img.onload = () => {
-                    console.log('Icon loaded with alternative path:', img.src);
+                    logger.info('Icon loaded with alternative path:', img.src);
                 };
                 
                 img.onerror = tryNextPath;
@@ -209,9 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
             iconElement.appendChild(label);
             
             // Click handler for icon selection
-            iconElement.addEventListener('click', () => {
-                console.log('Icon selected:', icon.key);
-                
+            iconElement.addEventListener('click', () => {                
                 // Remove selection from all icons
                 iconGrid.querySelectorAll('.icon-option').forEach(opt => {
                     opt.classList.remove('selected');
@@ -221,7 +207,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 iconElement.classList.add('selected');
                 
                 // Save the selection - this should trigger the app icon change
-                console.log('Sending selectedIcon to save-settings:', icon.key);
                 window.api.send('save-settings', { selectedIcon: icon.key });
                 
                 // Show visual feedback
@@ -249,6 +234,4 @@ document.addEventListener('DOMContentLoaded', () => {
             window.api.send('close-settings');
         }
     });
-
-    console.log('Settings window initialization complete');
 }); 

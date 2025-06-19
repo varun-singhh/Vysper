@@ -379,42 +379,26 @@
             gfm: true
         });
 
-        // Test if window is working
-        console.log('LLM Response window loaded');
-        console.log('electronAPI available:', typeof window.electronAPI !== 'undefined');
-        
         // Set up event listeners using electronAPI from preload script
         if (window.electronAPI) {
             // Set up show-loading event listener
             window.electronAPI.onShowLoading(() => {
-                console.log('Showing loading state');
                 showLoadingState();
             });
             
-            // Set up display-llm-response event listener
             window.electronAPI.onDisplayLlmResponse((event, data) => {
-            console.log('LLM Response window received data:', data);
-            // Check both content and response properties for compatibility
-            const response = data.content || data.response;
-            console.log('Response length:', response ? response.length : 0);
-            console.log('Skill:', data.metadata?.skill || data.skill);
-            console.log('Window size before display:', window.innerWidth, 'x', window.innerHeight);
+                const response = data.content || data.response;
             
             // Check if window is still small (compact size) and request expansion
             if (window.innerWidth < 500 || window.innerHeight < 300) {
-                console.log('Window appears to still be compact size, requesting expansion...');
-                
                 // Pre-calculate content metrics for initial sizing
                 if (response) {
                     const codeBlocks = extractCodeBlocks(response);
                     const contentMetrics = calculateContentMetrics(response, codeBlocks);
-                    console.log('Pre-calculated content metrics for expansion:', contentMetrics);
                     
                     window.electronAPI.expandLlmWindow(contentMetrics)
                         .then(() => {
-                            console.log('Window expansion completed');
                             setTimeout(() => {
-                                console.log('Window size after expansion:', window.innerWidth, 'x', window.innerHeight);
                                 hideLoadingState();
                                 displayResponse(data);
                                 setupScrolling();
@@ -430,7 +414,6 @@
                         });
                 } else {
                     // Fallback for missing response data
-                    console.log('No response data for expansion, displaying directly');
                     hideLoadingState();
                     displayResponse(data);
                     setupScrolling();
@@ -438,7 +421,6 @@
                     setTimeout(verifyDisplayState, 400);
                 }
             } else {
-                console.log('Window is already expanded, displaying content immediately');
                 hideLoadingState();
                 displayResponse(data);
                 setupScrolling();
@@ -469,11 +451,9 @@
             if (loadingElement) {
                 loadingElement.classList.add('hidden');
                 loadingElement.style.display = 'none'; // Force hide
-                console.log('Loading element hidden with both class and style');
             } else {
-                console.warn('Loading element not found!');
+                logger.error('Loading element not found!');
             }
-            console.log('Loading state hidden');
         }
 
         function calculateContentMetrics(response, codeBlocks) {
@@ -503,21 +483,15 @@
         }
 
         function displayResponse(data) {
-            console.log('displayResponse called with data:', data);
-            
             // Show content
             const responseElement = document.getElementById('response-content');
             
-            console.log('Response element:', responseElement);
-            
             if (responseElement) {
                 responseElement.classList.remove('hidden');
-                console.log('Response content shown');
             }
 
             // Parse the response - check both content and response properties for compatibility
             const response = data.content || data.response;
-            console.log('Response to parse:', response ? response.substring(0, 200) + '...' : 'No response');
             
             if (!response) {
                 console.error('No response data received', {
@@ -531,28 +505,22 @@
             // Check if response contains code blocks
             const codeBlocks = extractCodeBlocks(response);
             hasCode = codeBlocks.length > 0;
-            console.log('Code blocks found:', codeBlocks.length);
 
             // Calculate content metrics for dynamic sizing
             const contentMetrics = calculateContentMetrics(response, codeBlocks);
-            console.log('Content metrics:', contentMetrics);
 
             if (hasCode) {
                 // Split layout: text on left, code on right
-                console.log('Using split layout');
                 displaySplitLayout(response, codeBlocks);
             } else {
                 // Full layout: all content in one panel
-                console.log('Using full layout');
                 displayFullLayout(response);
             }
             
             // Request dynamic window sizing based on content
             setTimeout(() => {
-                console.log('Requesting window resize based on content metrics');
                 window.electronAPI.resizeLlmWindowForContent(contentMetrics)
                     .then(result => {
-                        console.log('Window resize result:', result);
                     })
                     .catch(error => {
                         console.error('Failed to resize window:', error);
@@ -573,9 +541,6 @@
                         document.querySelector('.full-content-inner')
                     ].filter(el => el !== null);
                 }
-
-                console.log('Scrollable elements found:', scrollableElements.length);
-                
                 // Reset scroll positions and ensure elements are focusable
                 scrollableElements.forEach(element => {
                     element.scrollTop = 0;
@@ -591,8 +556,6 @@
         }
 
         function enableScrolling() {
-            console.log('Enabling scrolling for', scrollableElements.length, 'elements');
-            
             scrollableElements.forEach(element => {
                 if (element) {
                     // Enable mouse/trackpad scrolling with smooth behavior
@@ -605,14 +568,11 @@
                     // Add wheel event for enhanced scrolling
                     element.addEventListener('wheel', handleWheelScroll, { passive: false });
                     
-                    console.log('Scrolling enabled for element');
                 }
             });
         }
 
         function disableScrolling() {
-            console.log('Disabling scrolling');
-            
             scrollableElements.forEach(element => {
                 if (element) {
                     element.removeEventListener('mouseenter', handleMouseEnter);
@@ -635,7 +595,7 @@
         function handleWheelScroll(e) {
             // Allow natural scrolling behavior
             // Don't prevent default to maintain smooth native scrolling
-            console.log('Wheel scroll detected on element');
+            logger.info('Wheel scroll detected on element');
         }
 
         function extractCodeBlocks(text) {
@@ -717,12 +677,12 @@
 
         // Handle window focus
         window.addEventListener('focus', () => {
-            console.log('LLM Response window focused');
+            logger.info('LLM Response window focused');
         });
 
         // Handle window close
         window.addEventListener('beforeunload', () => {
-            console.log('LLM Response window closing');
+            logger.info('LLM Response window closing');
         });
 
         // Add keyboard scrolling support for when interactive
@@ -793,7 +753,7 @@
             const isLoadingHidden = loadingElement ? loadingElement.classList.contains('hidden') : true;
             const isContentVisible = responseElement ? !responseElement.classList.contains('hidden') : false;
             
-            console.log('Display state verification:', {
+            logger.info('Display state verification:', {
                 loadingHidden: isLoadingHidden,
                 contentVisible: isContentVisible,
                 windowVisible: !document.hidden
@@ -813,26 +773,14 @@
 
         // Add global debugging function
         window.debugLLMWindow = function() {
-            console.log('=== LLM Window Debug Info ===');
-            console.log('Current layout:', currentLayout);
-            console.log('Has code:', hasCode);
-            console.log('Is interactive:', isInteractive);
-            console.log('Scrollable elements:', scrollableElements.length);
+            logger.debug('=== LLM Window Debug Info ===');
+            logger.debug('Current layout:', currentLayout);
+            logger.debug('Has code:', hasCode);
+            logger.debug('Is interactive:', isInteractive);
+            logger.debug('Scrollable elements:', scrollableElements.length);
             
             const loadingElement = document.getElementById('loading');
             const responseElement = document.getElementById('response-content');
-            
-            console.log('Loading element:', {
-                exists: !!loadingElement,
-                hidden: loadingElement ? loadingElement.classList.contains('hidden') : 'N/A',
-                display: loadingElement ? loadingElement.style.display : 'N/A'
-            });
-            
-            console.log('Response element:', {
-                exists: !!responseElement,
-                hidden: responseElement ? responseElement.classList.contains('hidden') : 'N/A',
-                display: responseElement ? responseElement.style.display : 'N/A'
-            });
         };
     </script>
 </body>

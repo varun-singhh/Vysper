@@ -34,7 +34,6 @@ class MainWindowUI {
 
     async init() {
         try {
-            console.log('MainWindowUI init() starting...');
             this.setupElements();
             this.setupEventListeners();
             
@@ -48,7 +47,6 @@ class MainWindowUI {
             this.updateAllElementStates(); // Update all elements with current state
             this.resizeWindowToContent();
             
-            console.log('MainWindowUI init() completed successfully');
             logger.info('Main window UI initialized', {
                 component: 'MainWindowUI',
                 skill: this.currentSkill,
@@ -56,7 +54,6 @@ class MainWindowUI {
             });
             
         } catch (error) {
-            console.error('Failed to initialize main window UI:', error);
             logger.error('Failed to initialize main window UI', {
                 component: 'MainWindowUI',
                 error: error.message
@@ -232,14 +229,7 @@ class MainWindowUI {
         this.skillIndicator = document.getElementById('skillIndicator');
         this.settingsIndicator = document.getElementById('settingsIndicator'); // Optional
         this.micButton = document.getElementById('micButton');
-        
-        console.log('Elements found:', {
-            statusDot: !!this.statusDot,
-            skillIndicator: !!this.skillIndicator,
-            settingsIndicator: !!this.settingsIndicator,
-            micButton: !!this.micButton
-        });
-        
+
         // Check for required elements (settingsIndicator is optional)
         if (!this.statusDot || !this.skillIndicator || !this.micButton) {
             throw new Error('Required UI elements not found');
@@ -303,7 +293,6 @@ class MainWindowUI {
         
         // Also listen via the api interface for backup
         if (window.api) {
-            console.log('Setting up api event listeners...');
             
             window.api.receive('interaction-mode-changed', (interactive) => {
                 logger.debug('Interaction mode changed via api:', interactive);
@@ -311,32 +300,24 @@ class MainWindowUI {
             });
             
             window.api.receive('skill-updated', (data) => {
-                console.log('!!! SKILL UPDATED EVENT RECEIVED !!!', data);
                 logger.info('Skill updated event received from main process:', data);
-                console.log('Skill updated - old skill:', this.currentSkill, 'new data:', data);
                 if (data && data.skill) {
                     this.handleSkillChanged(data);
                 } else if (typeof data === 'string') {
                     // Handle case where skill is passed directly as string
-                    console.log('Skill passed as string:', data);
                     this.handleSkillChanged({ skill: data });
                 } else {
                     logger.warn('Skill updated event received but no skill data found:', data);
-                    console.log('Raw event data:', JSON.stringify(data));
                 }
             });
             
             // Listen for skill updates from settings window  
             window.api.receive('update-skill', (skill) => {
-                console.log('!!! UPDATE SKILL EVENT RECEIVED !!!', skill);
                 logger.info('Direct skill update received from settings:', skill);
-                console.log('Direct skill update - old skill:', this.currentSkill, 'new skill:', skill);
                 this.handleSkillChanged({ skill: skill });
             });
-            
-            console.log('API event listeners set up successfully');
         } else {
-            console.error('window.api not available - event listeners not set up!');
+            logger.error('window.api not available - event listeners not set up!');
         }
         
         // Keyboard shortcuts
@@ -388,24 +369,18 @@ class MainWindowUI {
             // Handle Cmd + Arrow keys based on interaction mode
             if (e.metaKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) {
                 e.preventDefault();
-                
-                console.log('Cmd + Arrow key pressed:', e.key, 'Interactive mode:', this.isInteractive);
-                
+
                 if (this.isInteractive) {
                     // Interactive mode: Cmd + Up/Down for skill navigation
                     if (e.key === 'ArrowUp') {
-                        console.log('Navigating to previous skill...');
                         this.navigateSkill(-1); // Previous skill
                     } else if (e.key === 'ArrowDown') {
-                        console.log('Navigating to next skill...');
                         this.navigateSkill(1); // Next skill
                     } else {
-                        console.log('Left/Right arrows do nothing in interactive mode');
                     }
                     // Left/Right arrows do nothing in interactive mode
                 } else {
                     // Non-interactive mode: Cmd + Arrow keys for window movement
-                    console.log('Moving window in direction:', e.key);
                     this.moveWindow(e.key);
                 }
             }
@@ -452,7 +427,6 @@ class MainWindowUI {
         
         this.updateSkillIndicator();
         
-        console.log('Skill change completed - UI should now show:', data.skill);
         logger.info('Skill changed successfully', {
             component: 'MainWindowUI',
             skill: data.skill
@@ -525,9 +499,7 @@ class MainWindowUI {
         if (skillSpan) {
             const oldText = skillSpan.textContent;
             skillSpan.textContent = skillName;
-            
-            console.log('Updated skill span from', oldText, 'to', skillName);
-            
+                        
             const tooltip = this.isInteractive ? 
                 `${skillName} - Use ⌘↑/↓ to navigate skills` : 
                 `${skillName} - Enable interactive mode (Alt+A) to navigate`;
@@ -559,21 +531,14 @@ class MainWindowUI {
     }
 
     navigateSkill(direction) {
-        console.log('navigateSkill called with direction:', direction, 'isInteractive:', this.isInteractive);
         
         if (!this.isInteractive) {
-            console.log('Not in interactive mode, returning early');
             return;
         }
         
-        console.log('Current skill:', this.currentSkill, 'Available skills:', this.availableSkills);
-        
         const currentIndex = this.availableSkills.indexOf(this.currentSkill);
-        console.log('Found current skill at index:', currentIndex);
         if (currentIndex === -1) {
-            console.log('Current skill not found in available skills array');
-            console.log('Exact current skill:', JSON.stringify(this.currentSkill));
-            console.log('Available skills:', JSON.stringify(this.availableSkills));
+            logger.error('Current skill not found in available skills array');
             return;
         }
         
@@ -586,7 +551,6 @@ class MainWindowUI {
         }
         
         const newSkill = this.availableSkills[newIndex];
-        console.log('Navigating from index', currentIndex, 'to index', newIndex, 'new skill:', newSkill);
         
         // Update skill locally and notify main process
         this.currentSkill = newSkill;
@@ -595,14 +559,12 @@ class MainWindowUI {
         // Save the skill change via IPC
         if (window.electronAPI && window.electronAPI.updateActiveSkill) {
             window.electronAPI.updateActiveSkill(newSkill).then(() => {
-                console.log('Skill navigation completed successfully');
                 logger.info('Skill navigation completed', {
                     component: 'MainWindowUI',
                     newSkill,
                     direction: direction > 0 ? 'down' : 'up'
                 });
             }).catch(error => {
-                console.log('Failed to update skill via navigation:', error);
                 logger.error('Failed to update skill via navigation', {
                     component: 'MainWindowUI',
                     error: error.message
@@ -978,19 +940,16 @@ class MainWindowUI {
 // Initialize when DOM is ready
 let mainWindowUI;
 if (typeof document !== 'undefined') {
-    console.log('Main window JavaScript loading...');
-    
     // Add immediate visual indicator that script is loading
     const style = document.createElement('style');
     document.head.appendChild(style);
     
     document.addEventListener('DOMContentLoaded', () => {
-        console.log('DOM Content Loaded - initializing MainWindowUI...');
                 
         mainWindowUI = new MainWindowUI();
         // Make it globally accessible for debugging
         window.mainWindowUI = mainWindowUI;
-        console.log('MainWindowUI initialized and available as window.mainWindowUI');
+        logger.info('MainWindowUI initialized and available as window.mainWindowUI');
     });
 }
 
