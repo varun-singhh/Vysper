@@ -1,2067 +1,1157 @@
-// Load environment variables from .env file
-require('dotenv').config()
+require("dotenv").config();
 
-const { app, BrowserWindow, screen, globalShortcut, desktopCapturer, ipcMain, session } = require('electron')
-const path = require('path')
-const fs = require('fs')
-const os = require('os')
-const { exec } = require('child_process')
-const util = require('util')
-const execPromise = util.promisify(exec)
-const Tesseract = require('tesseract.js')
-const { GoogleGenerativeAI } = require('@google/generative-ai')
-const { promptLoader } = require('./prompt-loader')
+const { app, BrowserWindow, globalShortcut, session, ipcMain } = require("electron");
+const logger = require("./src/core/logger").createServiceLogger("MAIN");
+const config = require("./src/core/config");
 
-// Initialize Google Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'your-api-key-here')
-const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+// Services
+const ocrService = require("./src/services/ocr.service");
+const speechService = require("./src/services/speech.service");
+const llmService = require("./src/services/llm.service");
 
-// Stealth measures
-process.title = 'WindowServer' // Disguise as a system process
-if (process.platform === 'darwin') {
-  // On macOS, we can use additional stealth measures
-  process.env.ELECTRON_NO_ATTACH_CONSOLE = '1'
-  process.env.ELECTRON_NO_ASAR = '1'
-}
+// Managers
+const windowManager = require("./src/managers/window.manager");
+const sessionManager = require("./src/managers/session.manager");
 
-let mainWindow = null
-let chatWindow = null
-let skillsWindow = null
-let llmResponseWindow = null
-let isRecording = false
-let isWindowHidden = false
-let isWindowInteractive = false
-let controlsInChat = false
-let activeWindow = 'main' // 'main', 'chat', 'skills', or 'llm-response'
-let activeSkill = 'dsa' // Default skill is DSA
-let sessionMemory = [] // Array to store session events
+class ApplicationController {
+  constructor() {
+    this.isReady = false;
+    this.activeSkill = "dsa";
 
-async function takeScreenshotAndOCR() {
-  try {
-    console.log('Taking screenshot...')
-    addToSessionMemory('Screenshot initiated')
-    
-    // Show LLM response window with loading state immediately
-    showLLMResponseWindowWithLoading()
-    
-    // Get screen sources
-    const sources = await desktopCapturer.getSources({ 
-      types: ['screen'],
-      thumbnailSize: { width: 1920, height: 1080 }
-    })
-    
-    if (sources.length === 0) {
-      throw new Error('No screen sources found')
+    // Window configurations for reference
+    this.windowConfigs = {
+      main: { title: "Vysper" },
+      chat: { title: "Chat" },
+      llmResponse: { title: "AI Response" },
+      settings: { title: "Settings" },
+    };
+
+    this.setupStealth();
+    this.setupEventHandlers();
+  }
+
+  setupStealth() {
+    if (config.get("stealth.disguiseProcess")) {
+      process.title = config.get("app.processTitle");
     }
-    
-    const source = sources[0]
-    console.log('Screen source found:', source.name)
-    
-    // Get the thumbnail image
-    const image = source.thumbnail
-    if (!image) {
-      throw new Error('No thumbnail available')
-    }
-    
-    console.log('Screenshot captured, processing OCR...')
-    addToSessionMemory('Screenshot captured', { 
-      source: source.name,
-      size: image.getSize()
-    })
-    
-    // Process OCR
-    const text = await performOCR(image)
-    
-    if (text && text.trim()) {
-      console.log('OCR completed, processing with LLM...')
-      addToSessionMemory('OCR completed', { 
-        textLength: text.length,
-        preview: text.substring(0, 100) + '...'
-      })
-      
-      // Get current active skill from session memory
-      const sessionContext = getLLMOptimizedSessionHistory()
-      const currentActiveSkill = activeSkill // Use the global active skill variable
-      
-      // Process OCR text with LLM
-      await processOCRWithLLM(text.trim(), currentActiveSkill)
-      
-      // Send to all windows
-      if (mainWindow) {
-        mainWindow.webContents.send('ocr-completed', { text: text })
-      }
-      if (chatWindow) {
-        chatWindow.webContents.send('ocr-completed', { text: text })
-      }
-      if (skillsWindow) {
-        skillsWindow.webContents.send('ocr-completed', { text: text })
-      }
-      
-    } else {
-      console.log('No text found in screenshot')
-      addToSessionMemory('OCR failed - no text found')
-      
-      // Hide LLM response window if no text found
-      if (llmResponseWindow) {
-        llmResponseWindow.hide()
-      }
-      
-      // Send error to windows
-      const errorData = { error: 'No text found in screenshot' }
-      if (mainWindow) {
-        mainWindow.webContents.send('ocr-error', errorData)
-      }
-      if (chatWindow) {
-        chatWindow.webContents.send('ocr-error', errorData)
-      }
-      if (skillsWindow) {
-        skillsWindow.webContents.send('ocr-error', errorData)
-      }
-    }
-    
-  } catch (error) {
-    console.error('Screenshot/OCR error:', error)
-    addToSessionMemory('Screenshot/OCR failed', { error: error.message })
-    
-    // Hide LLM response window on error
-    if (llmResponseWindow) {
-      llmResponseWindow.hide()
-    }
-    
-    // Send error to windows
-    const errorData = { error: error.message }
-    if (mainWindow) {
-      mainWindow.webContents.send('ocr-error', errorData)
-    }
-    if (chatWindow) {
-      chatWindow.webContents.send('ocr-error', errorData)
-    }
-    if (skillsWindow) {
-      skillsWindow.webContents.send('ocr-error', errorData)
+
+    // Set default stealth app name early
+    app.setName("Terminal "); // Default to Terminal stealth mode
+    process.title = "Terminal ";
+
+    if (
+      process.platform === "darwin" &&
+      config.get("stealth.noAttachConsole")
+    ) {
+      process.env.ELECTRON_NO_ATTACH_CONSOLE = "1";
+      process.env.ELECTRON_NO_ASAR = "1";
     }
   }
-}
 
-async function performOCR(image) {
-  try {
-    // Create a temporary file path
-    const tempPath = path.join(os.tmpdir(), `screenshot-${Date.now()}.png`)
-    console.log('Temporary file path:', tempPath)
-    
-    // Convert NativeImage to buffer and save
-    const buffer = image.toPNG()
-    fs.writeFileSync(tempPath, buffer)
-    console.log('Screenshot saved to:', tempPath)
-    
+  setupEventHandlers() {
+    app.whenReady().then(() => this.onAppReady());
+    app.on("window-all-closed", () => this.onWindowAllClosed());
+    app.on("activate", () => this.onActivate());
+    app.on("will-quit", () => this.onWillQuit());
+
+    this.setupIPCHandlers();
+    this.setupServiceEventHandlers();
+  }
+
+  async onAppReady() {
+    // Force stealth mode IMMEDIATELY when app is ready
+    app.setName("Terminal ");
+    process.title = "Terminal ";
+
+    logger.info("Application starting", {
+      version: config.get("app.version"),
+      environment: config.get("app.isDevelopment")
+        ? "development"
+        : "production",
+      platform: process.platform,
+    });
+
     try {
-      // Perform OCR
-      console.log('Starting OCR...')
-      const { data: { text } } = await Tesseract.recognize(tempPath, 'eng', {
-        logger: m => console.log('OCR Progress:', m)
-      })
+      this.setupPermissions();
+
+      // Small delay to ensure desktop/space detection is accurate
+      await new Promise((resolve) => setTimeout(resolve, 200));
+
+      await windowManager.initializeWindows();
+      this.setupGlobalShortcuts();
+
+      // Initialize default stealth mode with terminal icon
+      this.updateAppIcon("terminal");
+
+      this.isReady = true;
+
+      logger.info("Application initialized successfully", {
+        windowCount: Object.keys(windowManager.getWindowStats().windows).length,
+        currentDesktop: "detected",
+      });
+
+      sessionManager.addEvent("Application started");
+    } catch (error) {
+      logger.error("Application initialization failed", {
+        error: error.message,
+      });
+      app.quit();
+    }
+  }
+
+  setupPermissions() {
+    session.defaultSession.setPermissionRequestHandler(
+      (webContents, permission, callback) => {
+        const allowedPermissions = ["microphone", "camera", "display-capture"];
+        const granted = allowedPermissions.includes(permission);
+
+        logger.debug("Permission request", { permission, granted });
+        callback(granted);
+      }
+    );
+  }
+
+  setupGlobalShortcuts() {
+    const shortcuts = {
+      "CommandOrControl+Shift+S": () => this.triggerScreenshotOCR(),
+      "CommandOrControl+Shift+V": () => windowManager.toggleVisibility(),
+      "CommandOrControl+Shift+I": () => windowManager.toggleInteraction(),
+      "CommandOrControl+Shift+C": () => windowManager.switchToWindow("chat"),
+      "CommandOrControl+Shift+\\": () => this.clearSessionMemory(),
+      "CommandOrControl+,": () => windowManager.showSettings(),
+      "Alt+A": () => windowManager.toggleInteraction(),
+      "Alt+R": () => this.toggleSpeechRecognition(),
+      "CommandOrControl+Shift+T": () => windowManager.forceAlwaysOnTopForAllWindows(),
+      "CommandOrControl+Shift+Alt+T": () => {
+        const results = windowManager.testAlwaysOnTopForAllWindows();
+        logger.info('Always-on-top test triggered via shortcut', results);
+      },
+      // Context-sensitive shortcuts based on interaction mode
+      "CommandOrControl+Up": () => this.handleUpArrow(),
+      "CommandOrControl+Down": () => this.handleDownArrow(),
+      "CommandOrControl+Left": () => this.handleLeftArrow(),
+      "CommandOrControl+Right": () => this.handleRightArrow(),
+    };
+
+    Object.entries(shortcuts).forEach(([accelerator, handler]) => {
+      const success = globalShortcut.register(accelerator, handler);
+      logger.debug("Global shortcut registered", { accelerator, success });
+    });
+  }
+
+  setupServiceEventHandlers() {
+    speechService.on("recording-started", () => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        window.webContents.send("recording-started");
+      });
+    });
+
+    speechService.on("recording-stopped", () => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        window.webContents.send("recording-stopped");
+      });
+    });
+
+    speechService.on("transcription", (text) => {      
+      // Add transcription to session memory
+      sessionManager.addUserInput(text, 'speech');
       
-      console.log('OCR completed successfully')
-      console.log('Extracted text:', text.trim())
+      const windows = BrowserWindow.getAllWindows();
       
-      // Delete the temporary file immediately after OCR
+      windows.forEach((window) => {
+        window.webContents.send("transcription-received", { text });
+      });
+      
+      // Automatically process transcription with LLM for intelligent response
+      setTimeout(async () => {
+        try {
+          const sessionHistory = sessionManager.getOptimizedHistory();
+          await this.processTranscriptionWithLLM(text, sessionHistory);
+        } catch (error) {
+          logger.error("Failed to process transcription with LLM", {
+            error: error.message,
+            text: text.substring(0, 100)
+          });
+        }
+      }, 500);
+    });
+
+    speechService.on("interim-transcription", (text) => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        window.webContents.send("interim-transcription", { text });
+      });
+    });
+
+    speechService.on("status", (status) => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        window.webContents.send("speech-status", { status });
+      });
+    });
+
+    speechService.on("error", (error) => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        window.webContents.send("speech-error", { error });
+      });
+    });
+  }
+
+  setupIPCHandlers() {
+    ipcMain.handle("take-screenshot", () => this.triggerScreenshotOCR());
+
+    ipcMain.handle("start-speech-recognition", () => {
+      speechService.startRecording();
+      return speechService.getStatus();
+    });
+
+    ipcMain.handle("stop-speech-recognition", () => {
+      speechService.stopRecording();
+      return speechService.getStatus();
+    });
+
+    // Also handle direct send events for fallback
+    ipcMain.on("start-speech-recognition", () => {
+      speechService.startRecording();
+    });
+
+    ipcMain.on("stop-speech-recognition", () => {
+      speechService.stopRecording();
+    });
+
+    ipcMain.on("chat-window-ready", () => {
+      // Send a test message to confirm communication
+      setTimeout(() => {
+        windowManager.broadcastToAllWindows("transcription-received", {
+          text: "Test message from main process - chat window communication is working!",
+        });
+      }, 1000);
+    });
+
+    ipcMain.on("test-chat-window", () => {
+      windowManager.broadcastToAllWindows("transcription-received", {
+        text: "🧪 IMMEDIATE TEST: Chat window IPC communication test successful!",
+      });
+    });
+
+    ipcMain.handle("show-all-windows", () => {
+      windowManager.showAllWindows();
+      return windowManager.getWindowStats();
+    });
+
+    ipcMain.handle("hide-all-windows", () => {
+      windowManager.hideAllWindows();
+      return windowManager.getWindowStats();
+    });
+
+    ipcMain.handle("enable-window-interaction", () => {
+      windowManager.setInteractive(true);
+      return windowManager.getWindowStats();
+    });
+
+    ipcMain.handle("disable-window-interaction", () => {
+      windowManager.setInteractive(false);
+      return windowManager.getWindowStats();
+    });
+
+    ipcMain.handle("switch-to-chat", () => {
+      windowManager.switchToWindow("chat");
+      return windowManager.getWindowStats();
+    });
+
+    ipcMain.handle("switch-to-skills", () => {
+      windowManager.switchToWindow("skills");
+      return windowManager.getWindowStats();
+    });
+
+    ipcMain.handle("resize-window", (event, { width, height }) => {
+      const mainWindow = windowManager.getWindow("main");
+      if (mainWindow) {
+        mainWindow.setSize(width, height);
+        logger.debug("Main window resized", { width, height });
+      }
+      return { success: true };
+    });
+
+    ipcMain.handle("move-window", (event, { deltaX, deltaY }) => {
+      const mainWindow = windowManager.getWindow("main");
+      if (mainWindow) {
+        const [currentX, currentY] = mainWindow.getPosition();
+        const newX = currentX + deltaX;
+        const newY = currentY + deltaY;
+        mainWindow.setPosition(newX, newY);
+        logger.debug("Main window moved", {
+          deltaX,
+          deltaY,
+          from: { x: currentX, y: currentY },
+          to: { x: newX, y: newY },
+        });
+      }
+      return { success: true };
+    });
+
+    ipcMain.handle("get-session-history", () => {
+      return sessionManager.getOptimizedHistory();
+    });
+
+    ipcMain.handle("clear-session-memory", () => {
+      sessionManager.clear();
+      windowManager.broadcastToAllWindows("session-cleared");
+      return { success: true };
+    });
+
+    ipcMain.handle("force-always-on-top", () => {
+      windowManager.forceAlwaysOnTopForAllWindows();
+      return { success: true };
+    });
+
+    ipcMain.handle("test-always-on-top", () => {
+      const results = windowManager.testAlwaysOnTopForAllWindows();
+      return { success: true, results };
+    });
+
+    ipcMain.handle("send-chat-message", async (event, text) => {
+      // Add chat message to session memory
+      sessionManager.addUserInput(text, 'chat');
+      logger.debug('Chat message added to session memory', { textLength: text.length });
+      
+      // Process typed message with LLM in the same way as transcribed text
+      setTimeout(async () => {
+        try {
+          const sessionHistory = sessionManager.getOptimizedHistory();
+          await this.processTranscriptionWithLLM(text, sessionHistory);
+        } catch (error) {
+          logger.error("Failed to process chat message with LLM", {
+            error: error.message,
+            text: text.substring(0, 100)
+          });
+        }
+      }, 500);
+      
+      return { success: true };
+    });
+
+    ipcMain.handle("get-skill-prompt", (event, skillName) => {
       try {
-        fs.unlinkSync(tempPath)
-        console.log('Screenshot file deleted successfully')
-      } catch (deleteError) {
-        console.error('Error deleting screenshot file:', deleteError)
+        const { promptLoader } = require('./prompt-loader');
+        const skillPrompt = promptLoader.getSkillPrompt(skillName);
+        return skillPrompt;
+      } catch (error) {
+        logger.error('Failed to get skill prompt', { skillName, error: error.message });
+        return null;
       }
-      
-      return text.trim()
-      
-    } catch (ocrError) {
-      // Delete the temporary file even if OCR fails
+    });
+
+    ipcMain.handle("set-gemini-api-key", (event, apiKey) => {
+      llmService.updateApiKey(apiKey);
+      return llmService.getStats();
+    });
+
+    ipcMain.handle("get-gemini-status", () => {
+      return llmService.getStats();
+    });
+
+    // Window binding IPC handlers
+    ipcMain.handle("set-window-binding", (event, enabled) => {
+      return windowManager.setWindowBinding(enabled);
+    });
+
+    ipcMain.handle("toggle-window-binding", () => {
+      return windowManager.toggleWindowBinding();
+    });
+
+    ipcMain.handle("get-window-binding-status", () => {
+      return windowManager.getWindowBindingStatus();
+    });
+
+    ipcMain.handle("get-window-stats", () => {
+      return windowManager.getWindowStats();
+    });
+
+    ipcMain.handle("set-window-gap", (event, gap) => {
+      return windowManager.setWindowGap(gap);
+    });
+
+    ipcMain.handle("move-bound-windows", (event, { deltaX, deltaY }) => {
+      windowManager.moveBoundWindows(deltaX, deltaY);
+      return windowManager.getWindowBindingStatus();
+    });
+
+    ipcMain.handle("test-gemini-connection", async () => {
+      return await llmService.testConnection();
+    });
+
+    ipcMain.handle("run-gemini-diagnostics", async () => {
       try {
-        fs.unlinkSync(tempPath)
-        console.log('Screenshot file deleted after OCR error')
-      } catch (deleteError) {
-        console.error('Error deleting screenshot file after OCR error:', deleteError)
-      }
-      
-      throw ocrError
-    }
-    
-  } catch (error) {
-    console.error('OCR processing error:', error)
-    throw error
-  }
-}
-
-// Set up permissions before creating windows
-function setupPermissions() {
-  // Handle permission requests
-  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    console.log('Permission requested:', permission)
-    
-    // Grant microphone and camera permissions
-    if (permission === 'microphone' || permission === 'camera' || permission === 'media') {
-      console.log('Granting permission:', permission)
-      callback(true)
-    } else {
-      console.log('Denying permission:', permission)
-      callback(false)
-    }
-  })
-
-  // Set permission check handler
-  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
-    console.log('Permission check:', permission, 'from:', requestingOrigin)
-    
-    // Allow microphone and media permissions
-    if (permission === 'microphone' || permission === 'media') {
-      return true
-    }
-    
-    return false
-  })
-
-  // Handle device permission requests
-  session.defaultSession.setDevicePermissionHandler((details) => {
-    console.log('Device permission requested:', details)
-    
-    // Allow microphone devices
-    if (details.deviceType === 'microphone') {
-      return true
-    }
-    
-    return false
-  })
-}
-
-function createChatWindow() {
-  chatWindow = new BrowserWindow({
-    width: 400,
-    height: 600,
-    x: 100,
-    y: 100,
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false, // Disable web security for local development
-      allowRunningInsecureContent: true,
-      experimentalFeatures: true,
-      // Enable media permissions
-      enableRemoteModule: true,
-      // Additional security settings for media access
-      additionalArguments: ['--enable-media-stream', '--allow-running-insecure-content']
-    },
-    show: false
-  })
-
-  // Load the chat HTML file
-  chatWindow.loadFile('chat.html')
-  
-  // Set window to be visible on all workspaces
-  chatWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  
-  // Handle window ready
-  chatWindow.webContents.once('dom-ready', () => {
-    console.log('Chat window DOM ready')
-    
-    // Pass environment variables to renderer process
-    chatWindow.webContents.executeJavaScript(`
-      // Make environment variables available to renderer process
-      process.env.AZURE_SPEECH_KEY = '${process.env.AZURE_SPEECH_KEY || ''}';
-      process.env.AZURE_SPEECH_REGION = '${process.env.AZURE_SPEECH_REGION || ''}';
-      console.log('Environment variables set in renderer process');
-    `).catch(err => {
-      console.error('Failed to set environment variables:', err)
-    })
-  })
-
-  chatWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    console.log(`[CHAT CONSOLE] ${message}`)
-  })
-  
-  chatWindow.once('ready-to-show', () => {
-    console.log('Chat window ready to show')
-    setChatWindowInteractive(false) // Start as non-interactive
-  })
-  
-  // Handle window close
-  chatWindow.on('closed', () => {
-    chatWindow = null
-  })
-
-  // Handle media access requests
-  chatWindow.webContents.on('media-started-playing', () => {
-    console.log('Media started playing in chat window')
-  })
-
-  chatWindow.webContents.on('media-paused', () => {
-    console.log('Media paused in chat window')
-  })
-}
-
-function createSkillsWindow() {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize
-  
-  skillsWindow = new BrowserWindow({
-    width: 400,
-    height: 500,
-    x: Math.floor((width - 400) / 2),
-    y: Math.floor((height - 500) / 2),
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    resizable: false,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false,
-      allowRunningInsecureContent: true,
-      experimentalFeatures: true
-    },
-    show: false
-  })
-
-  // Load the skills HTML file
-  skillsWindow.loadFile('skills.html')
-  
-  // Set window to be visible on all workspaces
-  skillsWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  
-  // Handle window ready
-  skillsWindow.webContents.once('dom-ready', () => {
-    console.log('Skills window DOM ready')
-  })
-
-  skillsWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    console.log(`[SKILLS CONSOLE] ${message}`)
-  })
-  
-  skillsWindow.once('ready-to-show', () => {
-    console.log('Skills window ready to show')
-    setSkillsWindowInteractive(false) // Start as non-interactive
-  })
-  
-  // Handle window close
-  skillsWindow.on('closed', () => {
-    skillsWindow = null
-  })
-}
-
-function createWindow() {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize
-  
-  // Calculate dynamic width based on content
-  const minWidth = 600
-  const maxWidth = Math.floor(width * 0.8)
-  const dynamicWidth = Math.max(minWidth, Math.min(maxWidth, 800))
-  
-  mainWindow = new BrowserWindow({
-    width: dynamicWidth,
-    height: 60,
-    x: Math.floor((width - dynamicWidth) / 2),
-    y: 60,
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    show: false,
-    hasShadow: false,
-    fullscreenable: false,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      backgroundThrottling: false,
-      webSecurity: false
-    }
-  })
-
-  // Stealth measures
-  mainWindow.setSkipTaskbar(true)
-  mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-  mainWindow.setVisibleOnAllWorkspaces(true)
-  mainWindow.setBackgroundColor('#00000000')
-  mainWindow.setWindowButtonVisibility(false)
-  mainWindow.setAutoHideMenuBar(true)
-  mainWindow.setMenuBarVisibility(false)
-  mainWindow.setFullScreenable(false)
-  mainWindow.setResizable(false)
-  mainWindow.setMovable(true)
-  mainWindow.setOpacity(1)
-
-  mainWindow.loadFile('index.html')
-  
-  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    console.log(`[MAIN CONSOLE] ${message}`)
-  })
-  
-  mainWindow.once('ready-to-show', () => {
-    mainWindow.show()
-    setWindowInteractive(false)
-  })
-  
-  mainWindow.on('blur', () => {
-    mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-    mainWindow.setVisibleOnAllWorkspaces(true)
-  })
-
-  mainWindow.on('hide', () => {
-    mainWindow.show()
-  })
-
-  // Handle display changes
-  screen.on('display-added', () => {
-    if (mainWindow) {
-      mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-      mainWindow.setVisibleOnAllWorkspaces(true)
-    }
-  })
-
-  screen.on('display-removed', () => {
-    if (mainWindow) {
-      mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-      mainWindow.setVisibleOnAllWorkspaces(true)
-    }
-  })
-
-  // Handle workspace changes
-  if (process.platform === 'darwin') {
-    app.on('activate', () => {
-      if (mainWindow) {
-        mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-        mainWindow.setVisibleOnAllWorkspaces(true)
-        mainWindow.show()
-      }
-      if (llmResponseWindow && llmResponseWindow.isVisible()) {
-        llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-        llmResponseWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-      }
-    })
-  }
-}
-
-function setWindowInteractive(interactive) {
-  isWindowInteractive = interactive
-  if (mainWindow) {
-    mainWindow.setIgnoreMouseEvents(!interactive, { forward: true })
-    mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-    mainWindow.setVisibleOnAllWorkspaces(true)
-  }
-  
-  // Also apply to LLM response window
-  if (llmResponseWindow && llmResponseWindow.isVisible()) {
-    llmResponseWindow.setIgnoreMouseEvents(!interactive, { forward: true })
-    llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-    llmResponseWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  }
-}
-
-function setChatWindowInteractive(interactive) {
-  if (chatWindow) {
-    chatWindow.setIgnoreMouseEvents(!interactive, { forward: true })
-    chatWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-    chatWindow.setVisibleOnAllWorkspaces(true)
-  }
-}
-
-function setSkillsWindowInteractive(interactive) {
-  if (skillsWindow) {
-    skillsWindow.setIgnoreMouseEvents(!interactive, { forward: true })
-    skillsWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-    skillsWindow.setVisibleOnAllWorkspaces(true)
-  }
-}
-
-function toggleWindowVisibility() {
-  if (isWindowHidden) {
-    // Show all windows
-    if (mainWindow) {
-      mainWindow.show()
-    }
-    if (chatWindow) {
-      chatWindow.show()
-    }
-    if (skillsWindow) {
-      skillsWindow.show()
-    }
-    if (llmResponseWindow) {
-      llmResponseWindow.show()
-    }
-    isWindowHidden = false
-    addToSessionMemory('All windows shown')
-  } else {
-    // Hide all windows
-    if (mainWindow) {
-      mainWindow.hide()
-    }
-    if (chatWindow) {
-      chatWindow.hide()
-    }
-    if (skillsWindow) {
-      skillsWindow.hide()
-    }
-    if (llmResponseWindow) {
-      llmResponseWindow.hide()
-    }
-    isWindowHidden = true
-    addToSessionMemory('All windows hidden')
-  }
-}
-
-function toggleWindowInteraction() {
-  const newInteractiveState = !isWindowInteractive
-  setWindowInteractive(newInteractiveState)
-  setChatWindowInteractive(newInteractiveState)
-  setSkillsWindowInteractive(newInteractiveState)
-  
-  if (newInteractiveState) {
-    console.log('Window interaction enabled')
-    addToSessionMemory('Window interaction enabled')
-    if (mainWindow) {
-      mainWindow.webContents.send('interaction-enabled')
-    }
-    if (chatWindow) {
-      chatWindow.webContents.send('interaction-enabled')
-    }
-    if (skillsWindow) {
-      skillsWindow.webContents.send('interaction-enabled')
-    }
-    if (llmResponseWindow) {
-      llmResponseWindow.webContents.send('interaction-enabled')
-    }
-  } else {
-    console.log('Window interaction disabled')
-    addToSessionMemory('Window interaction disabled')
-    if (mainWindow) {
-      mainWindow.webContents.send('interaction-disabled')
-    }
-    if (chatWindow) {
-      chatWindow.webContents.send('interaction-disabled')
-    }
-    if (skillsWindow) {
-      skillsWindow.webContents.send('interaction-disabled')
-    }
-    if (llmResponseWindow) {
-      llmResponseWindow.webContents.send('interaction-disabled')
-    }
-  }
-}
-
-function switchToWindow(windowType) {
-  activeWindow = windowType
-  console.log(`Switched to ${windowType} window`)
-  addToSessionMemory('Window switched', { window: windowType })
-  
-  // Update window activation indicators
-  if (chatWindow) {
-    if (windowType === 'chat') {
-      chatWindow.webContents.send('window-activated')
-    } else {
-      chatWindow.webContents.send('window-deactivated')
-    }
-  }
-  
-  if (skillsWindow) {
-    if (windowType === 'skills') {
-      skillsWindow.webContents.send('window-activated')
-    } else {
-      skillsWindow.webContents.send('window-deactivated')
-    }
-  }
-  
-  // Focus the active window
-  if (windowType === 'chat' && chatWindow) {
-    chatWindow.focus()
-  } else if (windowType === 'skills' && skillsWindow) {
-    skillsWindow.focus()
-  } else if (windowType === 'main' && mainWindow) {
-    mainWindow.focus()
-  }
-}
-
-// Prevent app from showing in dock and activity monitor
-app.dock?.hide()
-
-// Enable media access command line switches
-app.commandLine.appendSwitch('disable-background-timer-throttling')
-app.commandLine.appendSwitch('disable-backgrounding-occluded-windows')
-app.commandLine.appendSwitch('disable-renderer-backgrounding')
-app.commandLine.appendSwitch('disable-features', 'OutOfBlinkCors')
-app.commandLine.appendSwitch('disable-site-isolation-trials')
-app.commandLine.appendSwitch('enable-media-stream')
-app.commandLine.appendSwitch('allow-running-insecure-content')
-app.commandLine.appendSwitch('disable-web-security')
-app.commandLine.appendSwitch('ignore-certificate-errors')
-app.commandLine.appendSwitch('allow-insecure-localhost')
-
-// Additional switches for media access
-if (process.platform === 'darwin') {
-  app.commandLine.appendSwitch('enable-features', 'MediaStreamTrack')
-  app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
-}
-
-app.whenReady().then(() => {
-  console.log('App ready, setting up permissions...')
-  
-  // Initialize skill prompt system
-  try {
-    console.log('🔄 Initializing skill prompt system...')
-    promptLoader.loadPrompts()
-    
-    const stats = promptLoader.getSessionStats()
-    console.log(`✅ ${stats.totalPrompts} skill prompts loaded successfully`)
-    console.log('📚 Available skills:', stats.availableSkills.join(', '))
-  } catch (error) {
-    console.error('❌ Failed to initialize prompt system:', error)
-    console.error('⚠️ System prompts will not be available - falling back to basic prompts')
-  }
-  
-  // Setup permissions first
-  setupPermissions()
-  
-  // Hide from Activity Monitor
-  if (process.platform === 'darwin') {
-    exec('defaults write com.apple.ActivityMonitor ShowCategory -int 0')
-  }
-  
-  // Create windows
-  createWindow()
-  createChatWindow()
-  createSkillsWindow()
-
-  // Register global shortcuts
-  globalShortcut.register('CommandOrControl+\\', () => {
-    toggleWindowVisibility()
-  })
-
-  globalShortcut.register('Alt+A', () => {
-    toggleWindowInteraction()
-  })
-
-  globalShortcut.register('Alt+2', () => {
-    if (!isWindowHidden) {
-      if (activeWindow === 'chat') {
-        // If chat is active, hide it and switch to main
-        if (chatWindow) {
-          chatWindow.hide()
-        }
-        switchToWindow('main')
-      } else {
-        // Switch to chat and show it
-        switchToWindow('chat')
-        if (chatWindow) {
-          chatWindow.show()
-          chatWindow.focus()
-        }
-        // Hide skills window if it's open
-        if (skillsWindow && skillsWindow.isVisible()) {
-          skillsWindow.hide()
-        }
-      }
-    }
-  })
-
-  globalShortcut.register('Alt+3', () => {
-    if (!isWindowHidden) {
-      if (activeWindow === 'skills') {
-        // If skills is active, hide it and switch to main
-        if (skillsWindow) {
-          skillsWindow.hide()
-        }
-        switchToWindow('main')
-        addToSessionMemory('Skills window hidden', { window: 'skills' })
-      } else {
-        // Switch to skills and show it
-        switchToWindow('skills')
-        if (skillsWindow) {
-          skillsWindow.show()
-          skillsWindow.focus()
-        }
-        // Hide chat window if it's open
-        if (chatWindow && chatWindow.isVisible()) {
-          chatWindow.hide()
-        }
-        addToSessionMemory('Skills window opened', { window: 'skills' })
-      }
-    }
-  })
-
-  globalShortcut.register('Alt+Space', () => {
-    if (isRecording) {
-      controlsInChat = !controlsInChat
-      console.log(`Controls moved to ${controlsInChat ? 'chat window' : 'main window'}`)
-      
-      // Send notification to both windows
-      if (mainWindow) {
-        mainWindow.webContents.send('controls-changed', controlsInChat)
-      }
-      if (chatWindow) {
-        chatWindow.webContents.send('controls-changed', controlsInChat)
-      }
-    }
-  })
-
-  globalShortcut.register('CommandOrControl+Left', () => {
-    if (!isWindowHidden) {
-      let targetWindow = mainWindow
-      if (activeWindow === 'chat' && chatWindow) {
-        targetWindow = chatWindow
-      } else if (activeWindow === 'skills' && skillsWindow) {
-        targetWindow = skillsWindow
-      } else if (activeWindow === 'llm-response' && llmResponseWindow) {
-        targetWindow = llmResponseWindow
-      }
-      
-      if (targetWindow && !isWindowHidden) {
-        const [x, y] = targetWindow.getPosition()
-        targetWindow.setPosition(Math.max(0, x - 50), y)
+        const connectivity = await llmService.checkNetworkConnectivity();
+        const apiTest = await llmService.testConnection();
         
-        // Move LLM response window with main window
-        if (targetWindow === mainWindow && llmResponseWindow) {
-          const mainBounds = mainWindow.getBounds()
-          const screenSize = screen.getPrimaryDisplay().workAreaSize
-          const windowWidth = Math.max(mainBounds.width, 800)
-          const windowHeight = Math.floor(screenSize.height * 0.6)
-          llmResponseWindow.setPosition(mainBounds.x, mainBounds.y + mainBounds.height + 5)
-        }
+        return {
+          success: true,
+          connectivity,
+          apiTest,
+          timestamp: new Date().toISOString()
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error.message,
+          timestamp: new Date().toISOString()
+        };
       }
-    }
-  })
+    });
 
-  globalShortcut.register('CommandOrControl+Right', () => {
-    if (!isWindowHidden) {
-      let targetWindow = mainWindow
-      if (activeWindow === 'chat' && chatWindow) {
-        targetWindow = chatWindow
-      } else if (activeWindow === 'skills' && skillsWindow) {
-        targetWindow = skillsWindow
-      } else if (activeWindow === 'llm-response' && llmResponseWindow) {
-        targetWindow = llmResponseWindow
-      }
-      
-      if (targetWindow && !isWindowHidden) {
-        const [x, y] = targetWindow.getPosition()
-        const { width } = screen.getPrimaryDisplay().workAreaSize
-        const windowWidth = targetWindow.getBounds().width
-        targetWindow.setPosition(Math.min(width - windowWidth, x + 50), y)
-        
-        // Move LLM response window with main window
-        if (targetWindow === mainWindow && llmResponseWindow) {
-          const mainBounds = mainWindow.getBounds()
-          const screenSize = screen.getPrimaryDisplay().workAreaSize
-          const windowWidth = Math.max(mainBounds.width, 800)
-          const windowHeight = Math.floor(screenSize.height * 0.6)
-          llmResponseWindow.setPosition(mainBounds.x, mainBounds.y + mainBounds.height + 5)
-        }
-      }
-    }
-  })
+    // Settings handlers
+    ipcMain.handle("show-settings", () => {
+      windowManager.showSettings();
 
-  globalShortcut.register('CommandOrControl+Up', () => {
-    if (!isWindowHidden) {
-      if (isWindowInteractive) {
-        // Interactive mode: Navigate skills
-        const prevSkill = getPreviousSkill()
-        setActiveSkill(prevSkill)
-        console.log('Switched to previous skill:', prevSkill)
-      } else {
-        // Non-interactive mode: Move windows up
-        moveActiveWindow('up')
-      }
-    }
-  })
-
-  globalShortcut.register('CommandOrControl+Down', () => {
-    if (!isWindowHidden) {
-      if (isWindowInteractive) {
-        // Interactive mode: Navigate skills
-        const nextSkill = getNextSkill()
-        setActiveSkill(nextSkill)
-        console.log('Switched to next skill:', nextSkill)
-      } else {
-        // Non-interactive mode: Move windows down
-        moveActiveWindow('down')
-      }
-    }
-  })
-
-  globalShortcut.register('CommandOrControl+Shift+S', () => {
-    if (mainWindow && !isWindowHidden) {
-      console.log('Screenshot shortcut triggered')
-      takeScreenshotAndOCR()
-    }
-  })
-
-  globalShortcut.register('CommandOrControl+T', () => {
-    if (chatWindow && !isWindowHidden && isRecording) {
-      if (chatWindow.isVisible()) {
-        chatWindow.hide()
-      } else {
-        chatWindow.show()
-        chatWindow.focus()
-      }
-    }
-  })
-
-  globalShortcut.register('CommandOrControl+R', () => {
-    if (!isWindowHidden) {
-      if (!isRecording) {
-        isRecording = true
-        console.log('Starting speech recognition...')
-        addToSessionMemory('Speech recognition started')
-        
-        // Show chat window
-        if (chatWindow) {
-          chatWindow.show()
-          chatWindow.focus()
-          // Send message to start recording in renderer process
-          chatWindow.webContents.send('recording-started')
-        }
-      } else {
-        isRecording = false
-        console.log('Stopping speech recognition...')
-        addToSessionMemory('Speech recognition stopped')
-        
-        // Send message to stop recording in renderer process
-        if (chatWindow) {
-          chatWindow.webContents.send('recording-stopped')
-          chatWindow.hide()
-        }
-        
-        // Reset controls to main window when recording stops
-        controlsInChat = false
-        if (mainWindow) {
-          mainWindow.webContents.send('controls-changed', false)
-        }
-        if (chatWindow) {
-          chatWindow.webContents.send('controls-changed', false)
-        }
-      }
-    }
-  })
-
-  globalShortcut.register('CommandOrControl+Shift+R', () => {
-    if (!isWindowHidden) {
-      isRecording = false
-      console.log('Force stopping speech recognition...')
-      addToSessionMemory('Speech recognition force stopped')
-      
-      // Send message to stop recording in renderer process
-      if (chatWindow) {
-        chatWindow.webContents.send('recording-stopped')
-        chatWindow.hide()
-      }
-      
-      // Reset controls to main window when recording stops
-      controlsInChat = false
-      if (mainWindow) {
-        mainWindow.webContents.send('controls-changed', false)
-      }
-      if (chatWindow) {
-        chatWindow.webContents.send('controls-changed', false)
-      }
-    }
-  })
-
-  globalShortcut.register('Alt+;', () => {
-    clearSessionMemory()
-    addToSessionMemory('Session memory cleared by user')
-  })
-
-  globalShortcut.register('Alt+H', () => {
-    if (chatWindow && !isWindowHidden) {
-      chatWindow.webContents.send('request-session-history')
-      chatWindow.show()
-      chatWindow.focus()
-      addToSessionMemory('Session history requested')
-    }
-  })
-
-  globalShortcut.register('Alt+G', () => {
-    if (mainWindow && !isWindowHidden) {
-      mainWindow.webContents.send('open-gemini-config')
-    }
-  })
-
-  globalShortcut.register('Alt+L', () => {
-    if (llmResponseWindow && !isWindowHidden) {
-      llmResponseWindow.show()
-      llmResponseWindow.focus()
-      addToSessionMemory('LLM response window focused')
-    }
-  })
-
-  // Add keyboard shortcuts to move windows left/right
-  globalShortcut.register('CommandOrControl+Left', () => {
-    if (!isWindowHidden && !isWindowInteractive) {
-      // Non-interactive mode: Move windows left
-      moveActiveWindow('left')
-    }
-  })
-
-  globalShortcut.register('CommandOrControl+Right', () => {
-    if (!isWindowHidden && !isWindowInteractive) {
-      // Non-interactive mode: Move windows right
-      moveActiveWindow('right')
-    }
-  })
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    }
-  })
-})
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
-})
-
-// Unregister all shortcuts when app is quitting
-app.on('will-quit', () => {
-  globalShortcut.unregisterAll()
-})
-
-// IPC handlers
-ipcMain.on('screenshot-taken', (event, imagePath) => {
-  console.log('Screenshot saved:', imagePath)
-})
-
-ipcMain.on('ocr-complete', (event, text) => {
-  console.log('OCR Text:', text)
-})
-
-ipcMain.on('toggle-recording', (event) => {
-  if (!isWindowHidden) {
-    if (!isRecording) {
-      isRecording = true
-      console.log('Starting speech recognition from chat window...')
-      
-      // Show chat window
-      if (chatWindow) {
-        chatWindow.show()
-        chatWindow.focus()
-        // Send message to start recording in renderer process
-        chatWindow.webContents.send('recording-started')
-      }
-    } else {
-      isRecording = false
-      console.log('Stopping speech recognition from chat window...')
-      
-      // Send message to stop recording in renderer process
-      if (chatWindow) {
-        chatWindow.webContents.send('recording-stopped')
-        chatWindow.hide()
-      }
-      
-      // Reset controls to main window when recording stops
-      controlsInChat = false
-      if (mainWindow) {
-        mainWindow.webContents.send('controls-changed', false)
-      }
-      if (chatWindow) {
-        chatWindow.webContents.send('controls-changed', false)
-      }
-    }
-  }
-})
-
-// Add debugging for media permissions
-ipcMain.on('debug-media-permissions', (event) => {
-  console.log('Debugging media permissions...')
-  
-  // Check system permissions on macOS
-  if (process.platform === 'darwin') {
-    exec('tccutil reset Microphone', (error, stdout, stderr) => {
-      if (error) {
-        console.log('TCC reset failed (this is normal):', error.message)
-      }
-    })
-  }
-})
-
-// Handle skill selection from skills window
-ipcMain.on('skill-selected', (event, skillName) => {
-  console.log('Skill selected:', skillName)
-  addToSessionMemory('Skill selected', { skill: skillName })
-  
-  // Update the global active skill and broadcast to all windows
-  setActiveSkill(skillName)
-  
-  // You can add specific logic for each skill here
-  switch (skillName) {
-    case 'dsa':
-      console.log('DSA Interview mode activated')
-      break
-    case 'behavioral':
-      console.log('Behavioral Interview mode activated')
-      break
-    case 'sales':
-      console.log('Sales mode activated')
-      break
-    case 'presentation':
-      console.log('Presentation mode activated')
-      break
-    case 'data-science':
-      console.log('Data Science mode activated')
-      break
-    default:
-      console.log(`${skillName} mode activated`)
-  }
-})
-
-// Handle skill activation from skills window
-ipcMain.on('activate-skill', (event, skillName) => {
-  console.log('Activating skill:', skillName)
-  addToSessionMemory('Skill activated', { skill: skillName })
-  // You can add specific activation logic here
-  // For example, switch to chat window and start recording with specific prompts
-  if (chatWindow) {
-    switchToWindow('chat')
-    chatWindow.show()
-    chatWindow.focus()
-    // You could send specific prompts or configurations based on the skill
-    chatWindow.webContents.send('skill-activated', skillName)
-  }
-})
-
-// Handle transcription from chat window
-ipcMain.on('transcription-received', (event, text) => {
-  console.log('Transcription received:', text)
-  addToSessionMemory('Transcription received', { text: text })
-})
-
-// Handle manual text input from chat window
-ipcMain.on('text-input', (event, text) => {
-  console.log('Text input received:', text)
-  addToSessionMemory('Text input', { text: text })
-})
-
-// Handle session history requests
-ipcMain.on('request-session-history', (event) => {
-  const history = getSessionHistory()
-  event.reply('session-history', history)
-})
-
-// Handle current skill state requests
-ipcMain.on('request-current-skill', (event) => {
-  console.log('Current skill requested, sending:', activeSkill)
-  event.reply('current-skill', { skill: activeSkill })
-})
-
-
-
-// Handle prompt system statistics request
-ipcMain.handle('get-prompt-stats', () => {
-  return promptLoader.getSessionStats()
-})
-
-// Handle available skills request
-ipcMain.handle('get-available-skills', () => {
-  return promptLoader.getAvailableSkills()
-})
-
-// Session memory management functions
-function addToSessionMemory(action, details = {}) {
-  const event = {
-    timestamp: new Date().toISOString(),
-    time: new Date().toLocaleTimeString(),
-    action: action,
-    details: details,
-    // LLM-friendly structured format
-    llm_context: {
-      action_type: categorizeAction(action),
-      primary_content: extractPrimaryContent(action, details),
-      metadata: extractMetadata(action, details),
-      context_summary: generateContextSummary(action, details)
-    }
-  }
-  
-  sessionMemory.push(event)
-  console.log(`[SESSION] ${event.time} - ${action}:`, details)
-  
-  // Send to all windows
-  if (mainWindow) {
-    mainWindow.webContents.send('session-event', event)
-  }
-  if (chatWindow) {
-    chatWindow.webContents.send('session-event', event)
-  }
-  if (skillsWindow) {
-    skillsWindow.webContents.send('session-event', event)
-  }
-  if (llmResponseWindow) {
-    llmResponseWindow.webContents.send('session-event', event)
-  }
-}
-
-function categorizeAction(action) {
-  const actionMap = {
-    'Screenshot taken and OCR completed': 'SCREENSHOT_OCR',
-    'Speech recognition started': 'SPEECH_START',
-    'Speech recognition stopped': 'SPEECH_STOP',
-    'Transcription received': 'TRANSCRIPTION',
-    'Text input': 'TEXT_INPUT',
-    'Skill selected': 'SKILL_SELECTION',
-    'Skill activated': 'SKILL_ACTIVATION',
-    'Window switched': 'WINDOW_NAVIGATION',
-    'Window interaction enabled': 'SYSTEM_CONTROL',
-    'Window interaction disabled': 'SYSTEM_CONTROL',
-    'All windows shown': 'SYSTEM_CONTROL',
-    'All windows hidden': 'SYSTEM_CONTROL',
-    'Session memory cleared by user': 'SYSTEM_CONTROL',
-    'Session history requested': 'SYSTEM_CONTROL'
-  }
-  return actionMap[action] || 'USER_ACTION'
-}
-
-function extractPrimaryContent(action, details) {
-  if (details.text) return details.text
-  if (details.ocrText) return details.ocrText
-  if (details.skill) return details.skill
-  if (details.window) return details.window
-  return action
-}
-
-function extractMetadata(action, details) {
-  const metadata = {
-    timestamp: new Date().toISOString(),
-    action: action
-  }
-  
-  if (details.skill) metadata.skill = details.skill
-  if (details.window) metadata.window = details.window
-  if (details.error) metadata.error = details.error
-  
-  return metadata
-}
-
-function generateContextSummary(action, details) {
-  const summaries = {
-    'Screenshot taken and OCR completed': `User captured a screenshot and extracted text: "${details.ocrText?.substring(0, 100)}${details.ocrText?.length > 100 ? '...' : ''}"`,
-    'Speech recognition started': 'User began voice recording for speech-to-text conversion',
-    'Speech recognition stopped': 'User stopped voice recording session',
-    'Transcription received': `User spoke: "${details.text}"`,
-    'Text input': `User typed: "${details.text}"`,
-    'Skill selected': `User selected skill: ${details.skill}`,
-    'Skill activated': `User activated skill: ${details.skill} - switching to chat mode`,
-    'Window switched': `User navigated to ${details.window} window`,
-    'Window interaction enabled': 'User enabled window interactivity (can click on window)',
-    'Window interaction disabled': 'User disabled window interactivity (click-through mode)',
-    'All windows shown': 'User made all windows visible',
-    'All windows hidden': 'User hid all windows (stealth mode)',
-    'Session memory cleared by user': 'User cleared all session history',
-    'Session history requested': 'User requested to view session history'
-  }
-  
-  return summaries[action] || `User performed action: ${action}`
-}
-
-function getSessionHistory() {
-  return sessionMemory
-}
-
-function getLLMOptimizedSessionHistory() {
-  if (sessionMemory.length === 0) {
-    return {
-      session_summary: "No session history available.",
-      total_events: 0,
-      session_duration: "0 minutes",
-      llm_context: {
-        user_workflow: "No activity recorded",
-        primary_activities: [],
-        current_context: "Fresh session"
-      }
-    }
-  }
-  
-  const firstEvent = sessionMemory[0]
-  const lastEvent = sessionMemory[sessionMemory.length - 1]
-  const sessionStart = new Date(firstEvent.timestamp)
-  const sessionEnd = new Date(lastEvent.timestamp)
-  const durationMs = sessionEnd - sessionStart
-  const durationMinutes = Math.round(durationMs / 60000)
-  
-  // Categorize activities with safety checks
-  const activities = {
-    screenshots: sessionMemory.filter(e => e.llm_context && e.llm_context.action_type === 'SCREENSHOT_OCR'),
-    speech_events: sessionMemory.filter(e => e.llm_context && (e.llm_context.action_type === 'SPEECH_START' || e.llm_context.action_type === 'SPEECH_STOP')),
-    transcriptions: sessionMemory.filter(e => e.llm_context && e.llm_context.action_type === 'TRANSCRIPTION'),
-    text_inputs: sessionMemory.filter(e => e.llm_context && e.llm_context.action_type === 'TEXT_INPUT'),
-    skill_activities: sessionMemory.filter(e => e.llm_context && (e.llm_context.action_type === 'SKILL_SELECTION' || e.llm_context.action_type === 'SKILL_ACTIVATION')),
-    window_navigation: sessionMemory.filter(e => e.llm_context && e.llm_context.action_type === 'WINDOW_NAVIGATION'),
-    system_controls: sessionMemory.filter(e => e.llm_context && e.llm_context.action_type === 'SYSTEM_CONTROL')
-  }
-  
-  // Extract current context using active skill variable
-  const currentSkill = activeSkill // Use the global active skill variable
-  const currentWindow = activities.window_navigation.length > 0 ? 
-    activities.window_navigation[activities.window_navigation.length - 1].details.window : 'main'
-  const isRecording = activities.speech_events.length % 2 === 1 // Odd number means recording is active
-  
-  // Generate workflow summary with safety checks
-  const workflowSteps = sessionMemory.map((event, index) => ({
-    step: index + 1,
-    time: event.time,
-    action: event.llm_context ? event.llm_context.action_type : event.action,
-    summary: event.llm_context ? event.llm_context.context_summary : `${event.action} performed`,
-    content: event.llm_context ? event.llm_context.primary_content : (event.details ? JSON.stringify(event.details).substring(0, 50) + '...' : 'No content')
-  }))
-  
-  return {
-    session_summary: `Session started at ${firstEvent.time}, duration: ${durationMinutes} minutes`,
-    total_events: sessionMemory.length,
-    session_duration: `${durationMinutes} minutes`,
-    current_context: {
-      active_window: currentWindow,
-      active_skill: currentSkill,
-      recording_status: isRecording ? 'active' : 'inactive',
-      last_action: lastEvent.llm_context ? lastEvent.llm_context.context_summary : `${lastEvent.action} performed`
-    },
-    activity_breakdown: {
-      screenshots_taken: activities.screenshots.length,
-      speech_sessions: Math.floor(activities.speech_events.length / 2),
-      text_inputs: activities.text_inputs.length,
-      skills_used: [...new Set(activities.skill_activities.map(e => e.details.skill))],
-      window_switches: activities.window_navigation.length
-    },
-    workflow_timeline: workflowSteps,
-    recent_activities: sessionMemory.slice(-5).map(e => ({
-      time: e.time,
-      action: e.llm_context ? e.llm_context.action_type : e.action,
-      summary: e.llm_context ? e.llm_context.context_summary : `${e.action} performed`
-    })),
-    llm_context: {
-      user_workflow: generateWorkflowDescription(activities),
-      primary_activities: getPrimaryActivities(activities),
-      current_context: `User is in ${currentWindow} window${currentSkill ? ` with ${currentSkill} skill active` : ''}${isRecording ? ' and currently recording speech' : ''}`,
-      session_focus: determineSessionFocus(activities)
-    }
-  }
-}
-
-function generateWorkflowDescription(activities) {
-  const parts = []
-  
-  if (activities.screenshots.length > 0) {
-    parts.push(`captured ${activities.screenshots.length} screenshots with OCR`)
-  }
-  
-  if (activities.speech_events.length > 0) {
-    parts.push(`conducted ${Math.floor(activities.speech_events.length / 2)} speech recognition sessions`)
-  }
-  
-  if (activities.text_inputs.length > 0) {
-    parts.push(`entered ${activities.text_inputs.length} text inputs`)
-  }
-  
-  if (activities.skill_activities.length > 0) {
-    const skills = [...new Set(activities.skill_activities.map(e => e.details && e.details.skill ? e.details.skill : 'unknown').filter(skill => skill !== 'unknown'))]
-    if (skills.length > 0) {
-      parts.push(`worked with skills: ${skills.join(', ')}`)
-    }
-  }
-  
-  return parts.length > 0 ? `User ${parts.join(', ')}` : "User has not performed any major activities"
-}
-
-function getPrimaryActivities(activities) {
-  const primary = []
-  
-  if (activities.screenshots.length > 0) primary.push('SCREENSHOT_OCR')
-  if (activities.speech_events.length > 0) primary.push('SPEECH_RECOGNITION')
-  if (activities.text_inputs.length > 0) primary.push('TEXT_INPUT')
-  if (activities.skill_activities.length > 0) primary.push('SKILL_WORK')
-  if (activities.window_navigation.length > 0) primary.push('WINDOW_NAVIGATION')
-  
-  return primary
-}
-
-function determineSessionFocus(activities) {
-  const counts = {
-    screenshots: activities.screenshots.length,
-    speech: activities.speech_events.length,
-    text: activities.text_inputs.length,
-    skills: activities.skill_activities.length,
-    navigation: activities.window_navigation.length
-  }
-  
-  const maxCount = Math.max(...Object.values(counts))
-  
-  if (counts.screenshots === maxCount) return 'SCREENSHOT_AND_OCR_WORK'
-  if (counts.speech === maxCount) return 'SPEECH_RECOGNITION_WORK'
-  if (counts.text === maxCount) return 'TEXT_INPUT_WORK'
-  if (counts.skills === maxCount) return 'SKILL_PRACTICE_WORK'
-  if (counts.navigation === maxCount) return 'WINDOW_NAVIGATION_WORK'
-  
-  return 'MIXED_ACTIVITIES'
-}
-
-function clearSessionMemory() {
-  sessionMemory = []
-  
-  // Reset prompt tracking when session is cleared
-  promptLoader.resetSession()
-  
-  console.log('[SESSION] Memory cleared and prompt tracking reset')
-  
-  // Notify all windows
-  if (mainWindow) {
-    mainWindow.webContents.send('session-cleared')
-  }
-  if (chatWindow) {
-    chatWindow.webContents.send('session-cleared')
-  }
-  if (skillsWindow) {
-    skillsWindow.webContents.send('session-cleared')
-  }
-  if (llmResponseWindow) {
-    llmResponseWindow.webContents.send('session-cleared')
-  }
-}
-
-function formatSessionHistory() {
-  if (sessionMemory.length === 0) {
-    return "No session history available."
-  }
-  
-  let history = "📋 Session History:\n\n"
-  
-  sessionMemory.forEach((event, index) => {
-    const time = event.time
-    const action = event.action
-    const details = event.details
-    
-    history += `${index + 1}. [${time}] ${action}\n`
-    
-    if (details.text) {
-      history += `   Text: "${details.text}"\n`
-    }
-    if (details.skill) {
-      history += `   Skill: ${details.skill}\n`
-    }
-    if (details.window) {
-      history += `   Window: ${details.window}\n`
-    }
-    if (details.ocrText) {
-      history += `   OCR: "${details.ocrText.substring(0, 100)}${details.ocrText.length > 100 ? '...' : ''}"\n`
-    }
-    
-    history += "\n"
-  })
-  
-  return history
-}
-
-// IPC handlers for session memory
-ipcMain.handle('get-session-history', () => {
-  return getSessionHistory()
-})
-
-ipcMain.handle('get-llm-session-history', () => {
-  return getLLMOptimizedSessionHistory()
-})
-
-ipcMain.handle('clear-session-memory', () => {
-  clearSessionMemory()
-  return { success: true, message: 'Session memory cleared' }
-})
-
-ipcMain.handle('format-session-history', () => {
-  return formatSessionHistory()
-})
-
-// IPC handlers
-ipcMain.handle('take-screenshot', async () => {
-  try {
-    await takeScreenshotAndOCR()
-    return { success: true }
-  } catch (error) {
-    console.error('Screenshot IPC error:', error)
-    return { success: false, error: error.message }
-  }
-})
-
-// LLM processing function
-async function processOCRWithLLM(ocrText, activeSkill = null) {
-  try {
-    console.log('Processing OCR text with LLM...')
-    console.log('OCR Text:', ocrText)
-    console.log('Active Skill:', activeSkill)
-    
-    // Get current session context for better LLM understanding
-    const sessionContext = getLLMOptimizedSessionHistory()
-    
-    // Load prompts from files
-    promptLoader.loadPrompts()
-    
-    // Use PromptLoader to prepare Gemini request with proper system prompts
-    const geminiRequest = promptLoader.prepareGeminiRequest(
-      activeSkill || 'general', 
-      `Analyze this content: ${ocrText}`, 
-      sessionMemory
-    )
-    
-    console.log(`Using ${geminiRequest.isUsingModelMemory ? 'model memory' : 'regular message'} for skill: ${geminiRequest.skillUsed}`)
-    
-    // Call Gemini with the prepared request
-    const llmResponse = await callGeminiWithRequest(geminiRequest, ocrText, activeSkill)
-    console.log('LLM Response:', llmResponse)
-    
-    // Update session memory with PromptLoader
-    sessionMemory = promptLoader.updateStoredMemory(
-      sessionMemory, 
-      geminiRequest.skillUsed, 
-      geminiRequest.isUsingModelMemory, 
-      ocrText, 
-      llmResponse
-    )
-    
-    // Also add to legacy session memory for compatibility
-    addToSessionMemory('OCR processed with LLM', {
-      ocrText: ocrText,
-      skill: activeSkill,
-      llmResponse: llmResponse
-    })
-    
-    // Send response to all windows
-    if (mainWindow) {
-      mainWindow.webContents.send('llm-response', { 
-        ocrText: ocrText,
-        skill: activeSkill,
-        response: llmResponse
-      })
-    }
-    if (chatWindow) {
-      chatWindow.webContents.send('llm-response', { 
-        ocrText: ocrText,
-        skill: activeSkill,
-        response: llmResponse
-      })
-    }
-    if (skillsWindow) {
-      skillsWindow.webContents.send('llm-response', { 
-        ocrText: ocrText,
-        skill: activeSkill,
-        response: llmResponse
-      })
-    }
-    
-    // Send data to LLM response window (window is already created with loading state)
-    setTimeout(() => {
-      if (llmResponseWindow && !llmResponseWindow.isDestroyed()) {
-        console.log('Sending LLM response data to window:', { 
-          skill: activeSkill,
-          responseLength: llmResponse.length
-        })
-        
-        // First expand the window to full size
-        console.log('About to expand LLM response window...')
-        expandLLMResponseWindow()
-        
-        // Then send the response data after a longer delay to ensure expansion completes
+      // Send current settings to the settings window
+      const settingsWindow = windowManager.getWindow("settings");
+      if (settingsWindow) {
+        const currentSettings = this.getSettings();
         setTimeout(() => {
-          console.log('Sending response data to expanded window...')
-          llmResponseWindow.webContents.send('display-llm-response', { 
-            skill: activeSkill,
-            response: llmResponse
-          })
-        }, 500)
-        
-        // Force window to front
-        llmResponseWindow.setAlwaysOnTop(true)
-        setTimeout(() => llmResponseWindow.setAlwaysOnTop(false), 1000)
-      } else {
-        console.error('LLM response window is not available or destroyed')
+          settingsWindow.webContents.send("load-settings", currentSettings);
+        }, 100);
       }
-    }, 1000)
-    
-    console.log('LLM processing completed' ,llmResponse)
-    return llmResponse
-    
-  } catch (error) {
-    console.error('LLM processing error:', error)
-    addToSessionMemory('OCR LLM processing failed', {
-      ocrText: ocrText,
-      skill: activeSkill,
-      error: error.message
-    })
-    
-    // Send error to windows
-    const errorResponse = {
-      ocrText: ocrText,
-      skill: activeSkill,
-      error: error.message,
-      response: 'LLM processing failed. Please try again.'
-    }
-    
-    if (mainWindow) {
-      mainWindow.webContents.send('llm-error', errorResponse)
-    }
-    if (chatWindow) {
-      chatWindow.webContents.send('llm-error', errorResponse)
-    }
-    if (skillsWindow) {
-      skillsWindow.webContents.send('llm-error', errorResponse)
-    }
-    
-    return null
+
+      return { success: true };
+    });
+
+    ipcMain.handle("get-settings", () => {
+      return this.getSettings();
+    });
+
+    ipcMain.handle("save-settings", (event, settings) => {
+      return this.saveSettings(settings);
+    });
+
+    ipcMain.handle("update-app-icon", (event, iconKey) => {
+      return this.updateAppIcon(iconKey);
+    });
+
+    ipcMain.handle("update-active-skill", (event, skill) => {
+      this.activeSkill = skill;
+      windowManager.broadcastToAllWindows("skill-changed", { skill });
+      return { success: true };
+    });
+
+    ipcMain.handle("restart-app-for-stealth", () => {
+      // Force restart the app to ensure stealth name changes take effect
+      const { app } = require("electron");
+      app.relaunch();
+      app.exit();
+    });
+
+    ipcMain.handle("close-window", (event) => {
+      const webContents = event.sender;
+      const window = windowManager.windows.forEach((win, type) => {
+        if (win.webContents === webContents) {
+          win.hide();
+          return true;
+        }
+      });
+      return { success: true };
+    });
+
+    // LLM window specific handlers
+    ipcMain.handle("expand-llm-window", (event, contentMetrics) => {
+      windowManager.expandLLMWindow(contentMetrics);
+      return { success: true, contentMetrics };
+    });
+
+    ipcMain.handle("resize-llm-window-for-content", (event, contentMetrics) => {
+      // Use the same expansion logic for now, can be enhanced later
+      windowManager.expandLLMWindow(contentMetrics);
+      return { success: true, contentMetrics };
+    });
+
+    ipcMain.handle("quit-app", () => {
+      logger.info("Quit app requested via IPC");
+      try {
+        // Force quit the application
+        const { app } = require("electron");
+
+        // Close all windows first
+        windowManager.destroyAllWindows();
+
+        // Unregister shortcuts
+        globalShortcut.unregisterAll();
+
+        // Force quit
+        app.quit();
+
+        // If the above doesn't work, force exit
+        setTimeout(() => {
+          process.exit(0);
+        }, 2000);
+      } catch (error) {
+        logger.error("Error during quit:", error);
+        process.exit(1);
+      }
+    });
+
+    // Handle close settings
+    ipcMain.on("close-settings", () => {
+      const settingsWindow = windowManager.getWindow("settings");
+      if (settingsWindow) {
+        settingsWindow.hide();
+      }
+    });
+
+    // Handle save settings (synchronous)
+    ipcMain.on("save-settings", (event, settings) => {
+      this.saveSettings(settings);
+    });
+
+    // Handle update skill
+    ipcMain.on("update-skill", (event, skill) => {
+      this.activeSkill = skill;
+      windowManager.broadcastToAllWindows("skill-updated", { skill });
+    });
+
+    // Handle quit app (alternative method)
+    ipcMain.on("quit-app", () => {
+      logger.info("Quit app requested via IPC (on method)");
+      try {
+        const { app } = require("electron");
+        windowManager.destroyAllWindows();
+        globalShortcut.unregisterAll();
+        app.quit();
+        setTimeout(() => process.exit(0), 1000);
+      } catch (error) {
+        logger.error("Error during quit (on method):", error);
+        process.exit(1);
+      }
+    });
   }
-}
 
-
-
-async function callGeminiWithRequest(geminiRequest, ocrText, activeSkill) {
-  try {
-    console.log('Calling Gemini Flash 1.5 with structured request...')
-    console.log('Request type:', geminiRequest.isUsingModelMemory ? 'Model Memory' : 'Regular Message')
-    console.log('Skill:', geminiRequest.skillUsed)
-    
-    // Check if API key is configured
-    if (!process.env.GEMINI_API_KEY) {
-      console.warn('GEMINI_API_KEY not found in environment variables. Using fallback response.')
-      return generateFallbackResponseFromPrompts(ocrText, activeSkill)
-    }
-    
-    // Prepare the model with system instruction if using model memory
-    let modelToUse = model
-    if (geminiRequest.systemInstruction) {
-      modelToUse = genAI.getGenerativeModel({ 
-        model: 'gemini-1.5-flash',
-        systemInstruction: geminiRequest.systemInstruction
-      })
-      console.log('Using model with system instruction')
-    }
-    
-    // Generate content with Gemini Flash 1.5
-    // Debug: Log the request structure
-    console.log('Gemini request contents structure:', JSON.stringify(geminiRequest.contents, null, 2))
-    
-    // Fix the contents structure for the Gemini API
-    // The API expects either a string or an array of Content objects
-    let contentToSend;
-    
-    if (Array.isArray(geminiRequest.contents) && geminiRequest.contents.length > 0) {
-      // Extract the text from the structured content
-      const userContent = geminiRequest.contents.find(content => content.role === 'user');
-      if (userContent && userContent.parts && userContent.parts[0] && userContent.parts[0].text) {
-        contentToSend = userContent.parts[0].text;
-      } else {
-        contentToSend = 'Analyze the provided content.';
+  toggleSpeechRecognition() {
+    const currentStatus = speechService.getStatus();
+    if (currentStatus.isRecording) {
+      try {
+        speechService.stopRecording();
+        windowManager.hideChatWindow();
+        logger.info("Speech recognition stopped via global shortcut");
+      } catch (error) {
+        logger.error("Error stopping speech recognition:", error);
       }
     } else {
-      contentToSend = 'Analyze the provided content.';
+      try {
+        speechService.startRecording();
+        windowManager.showChatWindow();
+        logger.info("Speech recognition started via global shortcut");
+      } catch (error) {
+        logger.error("Error starting speech recognition:", error);
+      }
     }
-    
-    console.log('Sending to Gemini:', contentToSend.substring(0, 100) + '...')
-    
-    const result = await modelToUse.generateContent(contentToSend)
-    const response = await result.response
-    const text = response.text()
-    
-    console.log('Gemini Flash 1.5 response received:', text.substring(0, 200) + '...')
-    return text
-    
-  } catch (error) {
-    console.error('Gemini Flash 1.5 API error:', error)
-    
-    // Fallback to prompt-based response if API fails
-    console.log('Falling back to prompt-based response due to API error')
-    return generateFallbackResponseFromPrompts(ocrText, activeSkill)
   }
-}
 
-function generateFallbackResponseFromPrompts(ocrText, activeSkill) {
-  try {
-    // Load prompts and get the system prompt for the active skill
-    promptLoader.loadPrompts()
-    const skillPrompt = promptLoader.getSkillPrompt(activeSkill || 'general')
-    
-    if (skillPrompt) {
-      console.log(`Using ${activeSkill} system prompt for offline fallback response`)
+  clearSessionMemory() {
+    try {
+      sessionManager.clear();
+      windowManager.broadcastToAllWindows("session-cleared");
+      logger.info("Session memory cleared via global shortcut");
+    } catch (error) {
+      logger.error("Error clearing session memory:", error);
+    }
+  }
+
+  handleUpArrow() {
+    const isInteractive = windowManager.getWindowStats().isInteractive;
+
+    if (isInteractive) {
+      // Interactive mode: Navigate to previous skill
+      this.navigateSkill(-1);
+    } else {
+      // Non-interactive mode: Move window up
+      windowManager.moveBoundWindows(0, -20);
+    }
+  }
+
+  handleDownArrow() {
+    const isInteractive = windowManager.getWindowStats().isInteractive;
+
+    if (isInteractive) {
+      // Interactive mode: Navigate to next skill
+      this.navigateSkill(1);
+    } else {
+      // Non-interactive mode: Move window down
+      windowManager.moveBoundWindows(0, 20);
+    }
+  }
+
+  handleLeftArrow() {
+    const isInteractive = windowManager.getWindowStats().isInteractive;
+
+    if (!isInteractive) {
+      // Non-interactive mode: Move window left
+      windowManager.moveBoundWindows(-20, 0);
+    }
+    // Interactive mode: Left arrow does nothing
+  }
+
+  handleRightArrow() {
+    const isInteractive = windowManager.getWindowStats().isInteractive;
+
+    if (!isInteractive) {
+      // Non-interactive mode: Move window right
+      windowManager.moveBoundWindows(20, 0);
+    }
+    // Interactive mode: Right arrow does nothing
+  }
+
+  navigateSkill(direction) {
+    const availableSkills = [
+      "programming",
+      "dsa",
+      "system-design",
+      "behavioral",
+      "data-science",
+      "sales",
+      "presentation",
+      "negotiation",
+      "devops",
+    ];
+
+    const currentIndex = availableSkills.indexOf(this.activeSkill);
+    if (currentIndex === -1) {
+      logger.warn("Current skill not found in available skills", {
+        currentSkill: this.activeSkill,
+        availableSkills,
+      });
+      return;
+    }
+
+    // Calculate new index with wrapping
+    let newIndex = currentIndex + direction;
+    if (newIndex >= availableSkills.length) {
+      newIndex = 0; // Wrap to beginning
+    } else if (newIndex < 0) {
+      newIndex = availableSkills.length - 1; // Wrap to end
+    }
+
+    const newSkill = availableSkills[newIndex];
+    this.activeSkill = newSkill;
+
+    // Update session manager with the new skill
+    sessionManager.setActiveSkill(newSkill);
+
+    logger.info("Skill navigated via global shortcut", {
+      from: availableSkills[currentIndex],
+      to: newSkill,
+      direction: direction > 0 ? "down" : "up",
+    });
+
+    // Broadcast the skill change to all windows
+    windowManager.broadcastToAllWindows("skill-updated", { skill: newSkill });
+  }
+
+  async triggerScreenshotOCR() {
+    if (!this.isReady) {
+      logger.warn("Screenshot requested before application ready");
+      return;
+    }
+
+    const startTime = Date.now();
+
+    try {
+      windowManager.showLLMLoading();
+
+      const ocrResult = await ocrService.captureAndProcess();
+
+      if (!ocrResult.text || ocrResult.text.trim().length === 0) {
+        windowManager.hideLLMResponse();
+        this.broadcastOCRError("No text found in screenshot");
+        return;
+      }
+
+      // Add OCR extracted text to session memory
+      sessionManager.addOCREvent(ocrResult.text, {
+        processingTime: ocrResult.metadata?.processingTime,
+        source: 'screenshot'
+      });
+
+      this.broadcastOCRSuccess(ocrResult);
+
+      const sessionHistory = sessionManager.getOptimizedHistory();
+      await this.processWithLLM(ocrResult.text, sessionHistory);
+    } catch (error) {
+      logger.error("Screenshot OCR process failed", {
+        error: error.message,
+        duration: Date.now() - startTime,
+      });
+
+      windowManager.hideLLMResponse();
+      this.broadcastOCRError(error.message);
       
-      // Extract key guidance from the actual prompt content
-      let response = `# ${activeSkill ? activeSkill.toUpperCase() : 'GENERAL'} Expert Analysis\n\n`
-      response += `**Content:** ${ocrText}\n\n`
+      sessionManager.addConversationEvent({
+        role: 'system',
+        content: `Screenshot OCR failed: ${error.message}`,
+        action: 'ocr_error',
+        metadata: {
+          error: error.message
+        }
+      });
+    }
+  }
+
+  async processWithLLM(text, sessionHistory) {
+    try {
+      // Add user input to session memory
+      sessionManager.addUserInput(text, 'llm_input');
+
+      // Check if current skill needs programming language context
+      const skillsRequiringProgrammingLanguage = ['programming', 'dsa', 'devops', 'system-design', 'data-science'];
+      const needsProgrammingLanguage = skillsRequiringProgrammingLanguage.includes(this.activeSkill);
       
-      // Use the actual prompt content to generate a contextual response
-      // The system prompts are designed as helper agents, so we can extract their structure
-      if (skillPrompt.includes('IMMEDIATE') || skillPrompt.includes('Quick')) {
-        response += `**Immediate Action Required:**\n`
-        response += `This content requires expert ${activeSkill} analysis. `
+      const llmResult = await llmService.processTextWithSkill(
+        text,
+        this.activeSkill,
+        sessionHistory.recent,
+        needsProgrammingLanguage ? this.codingLanguage : null
+      );
+
+      logger.info("LLM processing completed, showing response", {
+        responseLength: llmResult.response.length,
+        skill: this.activeSkill,
+        programmingLanguage: needsProgrammingLanguage ? this.codingLanguage : 'not applicable',
+        processingTime: llmResult.metadata.processingTime,
+        responsePreview: llmResult.response.substring(0, 200) + "...",
+      });
+
+      // Add LLM response to session memory
+      sessionManager.addModelResponse(llmResult.response, {
+        skill: this.activeSkill,
+        processingTime: llmResult.metadata.processingTime,
+        usedFallback: llmResult.metadata.usedFallback,
+      });
+
+      windowManager.showLLMResponse(llmResult.response, {
+        skill: this.activeSkill,
+        processingTime: llmResult.metadata.processingTime,
+        usedFallback: llmResult.metadata.usedFallback,
+      });
+
+      this.broadcastLLMSuccess(llmResult);
+    } catch (error) {
+      logger.error("LLM processing failed", {
+        error: error.message,
+        skill: this.activeSkill,
+      });
+
+      windowManager.hideLLMResponse();
+      sessionManager.addConversationEvent({
+        role: 'system',
+        content: `LLM processing failed: ${error.message}`,
+        action: 'llm_error',
+        metadata: {
+          error: error.message,
+          skill: this.activeSkill
+        }
+      });
+
+      this.broadcastLLMError(error.message);
+    }
+  }
+
+  async processTranscriptionWithLLM(text, sessionHistory) {
+    try {
+      // Validate input text
+      if (!text || typeof text !== 'string' || text.trim().length === 0) {
+        logger.warn("Skipping LLM processing for empty or invalid transcription", {
+          textType: typeof text,
+          textLength: text ? text.length : 0
+        });
+        return;
+      }
+
+      const cleanText = text.trim();
+      if (cleanText.length < 2) {
+        logger.debug("Skipping LLM processing for very short transcription", {
+          text: cleanText
+        });
+        return;
+      }
+
+      logger.info("Processing transcription with intelligent LLM response", {
+        skill: this.activeSkill,
+        textLength: cleanText.length,
+        textPreview: cleanText.substring(0, 100) + "..."
+      });
+
+      // Check if current skill needs programming language context
+      const skillsRequiringProgrammingLanguage = ['programming', 'dsa', 'devops', 'system-design', 'data-science'];
+      const needsProgrammingLanguage = skillsRequiringProgrammingLanguage.includes(this.activeSkill);
+
+      const llmResult = await llmService.processTranscriptionWithIntelligentResponse(
+        cleanText,
+        this.activeSkill,
+        sessionHistory.recent,
+        needsProgrammingLanguage ? this.codingLanguage : null
+      );
+
+      // Add LLM response to session memory
+      sessionManager.addModelResponse(llmResult.response, {
+        skill: this.activeSkill,
+        processingTime: llmResult.metadata.processingTime,
+        usedFallback: llmResult.metadata.usedFallback,
+        isTranscriptionResponse: true
+      });
+
+      // Send response to chat windows
+      this.broadcastTranscriptionLLMResponse(llmResult);
+
+      logger.info("Transcription LLM response completed", {
+        responseLength: llmResult.response.length,
+        skill: this.activeSkill,
+        programmingLanguage: needsProgrammingLanguage ? this.codingLanguage : 'not applicable',
+        processingTime: llmResult.metadata.processingTime
+      });
+
+    } catch (error) {
+      logger.error("Transcription LLM processing failed", {
+        error: error.message,
+        errorStack: error.stack,
+        skill: this.activeSkill,
+        text: text ? text.substring(0, 100) : 'undefined'
+      });
+
+      // Try to provide a fallback response
+      try {
+        const fallbackResult = llmService.generateIntelligentFallbackResponse(text, this.activeSkill);
         
-        // Extract specific methodologies from the prompt
-        if (skillPrompt.includes('naive') && skillPrompt.includes('optimal')) {
-          response += `Apply the naive→optimal approach: start simple, then optimize.\n\n`
-        } else if (skillPrompt.includes('STAR') || skillPrompt.includes('Situation')) {
-          response += `Structure using STAR format for clear impact.\n\n`
-        } else if (skillPrompt.includes('statistics') || skillPrompt.includes('numbers')) {
-          response += `Support with compelling statistics and data points.\n\n`
-        } else if (skillPrompt.includes('clarifying questions')) {
-          response += `Begin by asking clarifying questions to understand requirements.\n\n`
+        sessionManager.addModelResponse(fallbackResult.response, {
+          skill: this.activeSkill,
+          processingTime: fallbackResult.metadata.processingTime,
+          usedFallback: true,
+          isTranscriptionResponse: true,
+          fallbackReason: error.message
+        });
+
+        this.broadcastTranscriptionLLMResponse(fallbackResult);
+        
+        logger.info("Used fallback response for transcription", {
+          skill: this.activeSkill,
+          fallbackResponse: fallbackResult.response
+        });
+        
+      } catch (fallbackError) {
+        logger.error("Fallback response also failed", {
+          fallbackError: fallbackError.message
+        });
+
+        sessionManager.addConversationEvent({
+          role: 'system',
+          content: `Transcription LLM processing failed: ${error.message}`,
+          action: 'transcription_llm_error',
+          metadata: {
+            error: error.message,
+            skill: this.activeSkill
+          }
+        });
+      }
+    }
+  }
+
+  broadcastOCRSuccess(ocrResult) {
+    windowManager.broadcastToAllWindows("ocr-completed", {
+      text: ocrResult.text,
+      metadata: ocrResult.metadata,
+    });
+  }
+
+  broadcastOCRError(errorMessage) {
+    windowManager.broadcastToAllWindows("ocr-error", {
+      error: errorMessage,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  broadcastLLMSuccess(llmResult) {
+    const broadcastData = {
+      response: llmResult.response,
+      metadata: llmResult.metadata,
+      skill: this.activeSkill, // Add the current active skill to the top level
+    };
+
+    logger.info("Broadcasting LLM success to all windows", {
+      responseLength: llmResult.response.length,
+      skill: this.activeSkill,
+      dataKeys: Object.keys(broadcastData),
+      responsePreview: llmResult.response.substring(0, 100) + "...",
+    });
+
+    windowManager.broadcastToAllWindows("llm-response", broadcastData);
+  }
+
+  broadcastLLMError(errorMessage) {
+    windowManager.broadcastToAllWindows("llm-error", {
+      error: errorMessage,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  broadcastTranscriptionLLMResponse(llmResult) {
+    const broadcastData = {
+      response: llmResult.response,
+      metadata: llmResult.metadata,
+      skill: this.activeSkill,
+      isTranscriptionResponse: true
+    };
+
+    logger.info("Broadcasting transcription LLM response to all windows", {
+      responseLength: llmResult.response.length,
+      skill: this.activeSkill,
+      responsePreview: llmResult.response.substring(0, 100) + "..."
+    });
+
+    windowManager.broadcastToAllWindows("transcription-llm-response", broadcastData);
+  }
+
+  onWindowAllClosed() {
+    if (process.platform !== "darwin") {
+      app.quit();
+    }
+  }
+
+  onActivate() {
+    if (!this.isReady) {
+      this.onAppReady();
+    } else {
+      // When app is activated, ensure windows appear on current desktop
+      const mainWindow = windowManager.getWindow("main");
+      if (mainWindow && mainWindow.isVisible()) {
+        windowManager.showOnCurrentDesktop(mainWindow);
+      }
+
+      // Also handle other visible windows
+      windowManager.windows.forEach((window, type) => {
+        if (window.isVisible()) {
+          windowManager.showOnCurrentDesktop(window);
+        }
+      });
+
+      logger.debug("App activated - ensured windows appear on current desktop");
+    }
+  }
+
+  onWillQuit() {
+    globalShortcut.unregisterAll();
+    windowManager.destroyAllWindows();
+
+    const sessionStats = sessionManager.getMemoryUsage();
+    logger.info("Application shutting down", {
+      sessionEvents: sessionStats.eventCount,
+      sessionSize: sessionStats.approximateSize,
+    });
+  }
+
+  getSettings() {
+    return {
+      codingLanguage: this.codingLanguage || "javascript",
+      activeSkill: this.activeSkill || "dsa",
+      appIcon: this.appIcon || "terminal",
+      selectedIcon: this.appIcon || "terminal",
+    };
+  }
+
+  saveSettings(settings) {
+    try {
+      // Update application settings
+      if (settings.codingLanguage) {
+        this.codingLanguage = settings.codingLanguage;
+      }
+      if (settings.activeSkill) {
+        this.activeSkill = settings.activeSkill;
+        // Broadcast skill change to all windows
+        windowManager.broadcastToAllWindows("skill-updated", {
+          skill: settings.activeSkill,
+        });
+      }
+      if (settings.appIcon) {
+        this.appIcon = settings.appIcon;
+      }
+
+      // Handle icon change specifically
+      if (settings.selectedIcon) {
+        this.appIcon = settings.selectedIcon;
+        // Immediately update the app icon
+        this.updateAppIcon(settings.selectedIcon);
+      }
+
+      // Persist settings to file or config
+      this.persistSettings(settings);
+
+      logger.info("Settings saved successfully", settings);
+      return { success: true };
+    } catch (error) {
+      logger.error("Failed to save settings", { error: error.message });
+      return { success: false, error: error.message };
+    }
+  }
+
+  persistSettings(settings) {
+    // You can extend this to save to a file or database
+    // For now, we'll just keep them in memory
+    logger.debug("Settings persisted", settings);
+  }
+
+  updateAppIcon(iconKey) {
+    try {
+      const { app } = require("electron");
+      const path = require("path");
+      const fs = require("fs");
+
+      // Icon mapping for available icons in assests/icons folder
+      const iconPaths = {
+        terminal: "assests/icons/terminal.png",
+        activity: "assests/icons/activity.png",
+        settings: "assests/icons/settings.png",
+      };
+
+      // App name mapping for stealth mode
+      const appNames = {
+        terminal: "Terminal ",
+        activity: "Activity Monitor ",
+        settings: "System Settings ",
+      };
+
+      const iconPath = iconPaths[iconKey];
+      const appName = appNames[iconKey];
+
+      if (!iconPath) {
+        logger.error("Invalid icon key", { iconKey });
+        return { success: false, error: "Invalid icon key" };
+      }
+
+      const fullIconPath = path.resolve(iconPath);
+
+      if (!fs.existsSync(fullIconPath)) {
+        logger.error("Icon file not found", {
+          iconKey,
+          iconPath: fullIconPath,
+        });
+        return { success: false, error: "Icon file not found" };
+      }
+
+      // Set app icon for dock/taskbar
+      if (process.platform === "darwin") {
+        // macOS - update dock icon
+        app.dock.setIcon(fullIconPath);
+
+        // Force dock refresh with multiple attempts
+        setTimeout(() => {
+          app.dock.setIcon(fullIconPath);
+        }, 100);
+
+        setTimeout(() => {
+          app.dock.setIcon(fullIconPath);
+        }, 500);
+      } else {
+        // Windows/Linux - update window icons
+        windowManager.windows.forEach((window, type) => {
+          if (window && !window.isDestroyed()) {
+            window.setIcon(fullIconPath);
+          }
+        });
+      }
+
+      // Update app name for stealth mode
+      this.updateAppName(appName, iconKey);
+
+      logger.info("App icon and name updated successfully", {
+        iconKey,
+        appName,
+        iconPath: fullIconPath,
+        platform: process.platform,
+        fileExists: fs.existsSync(fullIconPath),
+      });
+
+      this.appIcon = iconKey;
+      return { success: true };
+    } catch (error) {
+      logger.error("Failed to update app icon", {
+        error: error.message,
+        stack: error.stack,
+      });
+      return { success: false, error: error.message };
+    }
+  }
+
+  updateAppName(appName, iconKey) {
+    try {
+      const { app } = require("electron");
+
+      // Force update process title for Activity Monitor stealth - CRITICAL
+      process.title = appName;
+
+      // Set app name in dock (macOS) - this affects the dock and Activity Monitor
+      if (process.platform === "darwin") {
+        // Multiple attempts to ensure the name sticks
+        app.setName(appName);
+
+        // Force update the bundle name for macOS stealth
+        const { execSync } = require("child_process");
+        try {
+          // Update the app's Info.plist CFBundleName in memory
+          if (process.mainModule && process.mainModule.filename) {
+            const appPath = process.mainModule.filename;
+            // Force set the bundle name directly
+            process.env.CFBundleName = appName.trim();
+          }
+        } catch (e) {
+          // Silently fail if we can't modify bundle info
+        }
+
+        // Clear dock badge and reset
+        if (app.dock) {
+          app.dock.setBadge("");
+          // Force dock refresh
+          setTimeout(() => {
+            app.dock.setIcon(
+              require("path").resolve(`assests/icons/${iconKey}.png`)
+            );
+          }, 50);
         }
       }
-      
-      // Extract actionable framework from the prompt
-      if (skillPrompt.includes('1.') || skillPrompt.includes('- ')) {
-        response += `**Expert Framework Applied:**\n`
-        response += `Following the structured ${activeSkill} methodology for optimal results.\n\n`
-      }
-      
-      // If the prompt mentions specific techniques, highlight them
-      if (skillPrompt.includes('dry run')) {
-        response += `**Analysis Approach:** Dry run with concrete examples\n`
-      }
-      if (skillPrompt.includes('capacity estimation') || skillPrompt.includes('QPS')) {
-        response += `**Scale Considerations:** Calculate capacity with real numbers\n`
-      }
-      if (skillPrompt.includes('objection handling')) {
-        response += `**Strategy:** Address concerns with data-driven responses\n`
-      }
-      
-      response += `\n**Status:** Offline mode using ${activeSkill} expert framework. `
-      response += `Connect API for full interactive analysis.\n\n`
-      response += `**Next Step:** Apply the loaded ${activeSkill} prompt methodology to this specific content.`
-      
-      return response
-    } else {
-      console.log(`No prompt found for skill: ${activeSkill}`)
-      return generateLegacyFallbackResponse(ocrText, activeSkill)
-    }
-  } catch (error) {
-    console.error('Error generating prompt-based fallback:', error)
-    return generateLegacyFallbackResponse(ocrText, activeSkill)
-  }
-}
 
-function generateLegacyFallbackResponse(ocrText, activeSkill) {
-  // Final fallback when even prompt loading fails
-  return `# ${activeSkill ? activeSkill.toUpperCase() : 'GENERAL'} Analysis\n\n` +
-    `**Content:** ${ocrText}\n\n` +
-    `**Status:** System prompts failed to load. Please check your prompts folder and restart the application.\n\n` +
-    `**Manual Action Required:** This content needs to be analyzed using the ${activeSkill || 'appropriate'} expertise framework.`
-}
+      // Set app user model ID for Windows taskbar grouping
+      app.setAppUserModelId(`${appName.trim()}-${iconKey}`);
 
-// IPC handlers for dynamic window sizing
-ipcMain.handle('expand-llm-window', (event, contentMetrics) => {
-  console.log('Received expand-llm-window request with metrics:', contentMetrics)
-  expandLLMResponseWindow(contentMetrics)
-  return { success: true }
-})
+      // Update all window titles to match the new app name
+      const windows = windowManager.windows;
+      windows.forEach((window, type) => {
+        if (window && !window.isDestroyed()) {
+          // Use stealth name for all windows
+          const stealthTitle = appName.trim();
+          window.setTitle(stealthTitle);
+        }
+      });
 
-ipcMain.handle('resize-llm-window-for-content', (event, contentMetrics) => {
-  console.log('Received resize request with content metrics:', contentMetrics)
-  
-  try {
-    if (llmResponseWindow && !llmResponseWindow.isDestroyed()) {
-      const { width, height } = calculateOptimalWindowSize(contentMetrics)
-      const currentBounds = llmResponseWindow.getBounds()
-      
-      // Validate the calculated dimensions
-      const validWidth = Math.max(300, Math.min(width || 800, 2000))
-      const validHeight = Math.max(200, Math.min(height || 400, 1500))
-      
-      console.log(`Calculated size: ${width}x${height}, Using validated size: ${validWidth}x${validHeight}`)
-      
-      llmResponseWindow.setBounds({
-        x: Math.round(currentBounds.x),
-        y: Math.round(currentBounds.y),
-        width: Math.round(validWidth),
-        height: Math.round(validHeight)
-      })
-      
-      console.log(`Successfully resized window to ${validWidth}x${validHeight} based on content`)
-      return { success: true, newSize: { width: validWidth, height: validHeight } }
-    }
-    return { success: false, error: 'Window not available' }
-  } catch (error) {
-    console.error('Error resizing window for content:', error)
-    return { success: false, error: error.message }
-  }
-})
+      // Multiple force refreshes with increasing delays
+      const refreshTimes = [50, 100, 200, 500];
+      refreshTimes.forEach((delay) => {
+        setTimeout(() => {
+          process.title = appName;
+          if (process.platform === "darwin") {
+            app.setName(appName);
+            // Force update bundle display name
+            if (app.getName() !== appName) {
+              app.setName(appName);
+            }
+          }
+        }, delay);
+      });
 
-// IPC handlers for LLM configuration
-ipcMain.handle('set-gemini-api-key', async (event, apiKey) => {
-  try {
-    // Update the environment variable
-    process.env.GEMINI_API_KEY = apiKey
-    
-    // Test the API key with a simple request
-    const testModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
-    const result = await testModel.generateContent('Hello')
-    await result.response
-    
-    console.log('Gemini API key configured successfully')
-    addToSessionMemory('Gemini API key configured', { status: 'success' })
-    
-    return { success: true, message: 'API key configured successfully' }
-  } catch (error) {
-    console.error('Failed to configure Gemini API key:', error)
-    addToSessionMemory('Gemini API key configuration failed', { error: error.message })
-    
-    return { success: false, error: error.message }
-  }
-})
-
-ipcMain.handle('get-gemini-status', async () => {
-  const hasApiKey = !!process.env.GEMINI_API_KEY
-  return {
-    hasApiKey: hasApiKey,
-    isConfigured: hasApiKey,
-    model: 'gemini-1.5-flash'
-  }
-})
-
-ipcMain.handle('test-gemini-connection', async () => {
-  try {
-    if (!process.env.GEMINI_API_KEY) {
-      return { success: false, error: 'No API key configured' }
-    }
-    
-    const testModel = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
-    const result = await testModel.generateContent('Test connection')
-    await result.response
-    
-    return { success: true, message: 'Connection successful' }
-  } catch (error) {
-    return { success: false, error: error.message }
-  }
-})
-
-function createLLMResponseWindow() {
-  // Get main window position and size
-  const mainBounds = mainWindow.getBounds()
-  const screenSize = screen.getPrimaryDisplay().workAreaSize
-  
-  // Start with small compact size for loading
-  const compactWidth = 220
-  const compactHeight = 80
-  
-  // Center the compact window on screen initially
-  const windowX = Math.max(50, Math.min(
-    mainBounds.x + (mainBounds.width - compactWidth) / 2,
-    screenSize.width - compactWidth - 50
-  ))
-  const windowY = Math.max(50, Math.min(
-    mainBounds.y + mainBounds.height + 10,
-    screenSize.height - compactHeight - 50
-  ))
-  
-  llmResponseWindow = new BrowserWindow({
-    width: compactWidth,
-    height: compactHeight,
-    x: windowX,
-    y: windowY,
-    transparent: true,
-    frame: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    resizable: false,
-    movable: true,
-    webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false,
-      webSecurity: false,
-      enableRemoteModule: true,
-      additionalArguments: ['--enable-media-stream']
-    },
-    show: false,
-    title: 'WindowServer'
-  })
-
-  // Critical: Set window properties for desktop following
-  if (process.platform === 'darwin') {
-    llmResponseWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-    
-    // Force the window to follow desktop changes
-    app.on('browser-window-focus', () => {
-      if (llmResponseWindow && llmResponseWindow.isVisible()) {
-        llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-        llmResponseWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-      }
-    })
-  }
-
-  // Load the LLM response HTML file
-  llmResponseWindow.loadFile('llm-response.html')
-  
-  // Show window when ready
-  llmResponseWindow.once('ready-to-show', () => {
-    llmResponseWindow.show()
-    llmResponseWindow.focus()
-  })
-
-  // Handle window close
-  llmResponseWindow.on('closed', () => {
-    llmResponseWindow = null
-    activeWindow = 'main'
-  })
-
-  // Handle window focus
-  llmResponseWindow.on('focus', () => {
-    activeWindow = 'llm-response'
-  })
-
-  console.log('LLM Response window created (compact mode)')
-}
-
-// Skill management functions
-function getNextSkill() {
-  const skills = ['dsa', 'behavioral', 'system-design', 'sales', 'presentation', 'negotiation', 'data-science', 'programming', 'devops']
-  const currentIndex = skills.indexOf(activeSkill)
-  const nextIndex = (currentIndex + 1) % skills.length
-  return skills[nextIndex]
-}
-
-function getPreviousSkill() {
-  const skills = ['dsa', 'behavioral', 'system-design', 'sales', 'presentation', 'negotiation', 'data-science', 'programming', 'devops']
-  const currentIndex = skills.indexOf(activeSkill)
-  const prevIndex = (currentIndex - 1 + skills.length) % skills.length
-  return skills[prevIndex]
-}
-
-function setActiveSkill(skill) {
-  const oldSkill = activeSkill
-  activeSkill = skill
-  
-  // Clear session memory when changing skills for a fresh start
-  if (oldSkill !== skill) {
-    console.log(`Clearing session memory due to skill change: ${oldSkill} → ${skill}`)
-    clearSessionMemory()
-    
-    // Add initial event to the fresh memory
-    addToSessionMemory('Skill changed', { 
-      oldSkill: oldSkill, 
-      newSkill: skill,
-      memoryCleared: true
-    })
-  }
-  
-  // Update all windows with new skill
-  if (mainWindow) {
-    mainWindow.webContents.send('skill-changed', { skill: skill })
-  }
-  if (chatWindow) {
-    chatWindow.webContents.send('skill-changed', { skill: skill })
-  }
-  if (skillsWindow) {
-    skillsWindow.webContents.send('skill-changed', { skill: skill })
-  }
-  if (llmResponseWindow) {
-    llmResponseWindow.webContents.send('skill-changed', { skill: skill })
-  }
-  
-  console.log(`Active skill changed from ${oldSkill} to ${skill} (memory cleared)`)
-}
-
-function moveActiveWindow(direction) {
-  const moveDistance = 20;
-  let windowsToMove = [];
-  
-  // Always move main window and LLM response window together
-  if (mainWindow) {
-    windowsToMove.push(mainWindow);
-  }
-  if (llmResponseWindow && llmResponseWindow.isVisible()) {
-    windowsToMove.push(llmResponseWindow);
-  }
-  
-  windowsToMove.forEach(window => {
-    const bounds = window.getBounds();
-    let newX = bounds.x;
-    let newY = bounds.y;
-    
-    switch (direction) {
-      case 'up':
-        newY = bounds.y - moveDistance;
-        break;
-      case 'down':
-        newY = bounds.y + moveDistance;
-        break;
-      case 'left':
-        newX = bounds.x - moveDistance;
-        break;
-      case 'right':
-        newX = bounds.x + moveDistance;
-        break;
-    }
-    
-    window.setPosition(newX, newY);
-  });
-  
-  console.log(`Moved windows ${direction} by ${moveDistance}px`);
-  addToSessionMemory('Windows moved', { direction: direction, distance: moveDistance });
-}
-
-function calculateOptimalWindowSize(contentMetrics) {
-  try {
-    const mainBounds = mainWindow ? mainWindow.getBounds() : { width: 1000 }
-    const screenSize = screen.getPrimaryDisplay().workAreaSize
-    
-    // Base dimensions with safety checks
-    const minWidth = 800
-    const maxWidth = Math.min(screenSize.width * 0.9, 1400)
-    const minHeight = 300
-    const maxHeight = Math.min(screenSize.height * 0.85, 1200)
-    
-    // Calculate width based on content
-    let optimalWidth = Math.max(minWidth, mainBounds.width || minWidth)
-    if (contentMetrics && contentMetrics.hasCode) {
-      // Code content needs more width for split layout
-      optimalWidth = Math.max(1000, optimalWidth)
-    }
-    optimalWidth = Math.min(optimalWidth, maxWidth)
-    
-    // Calculate height based on content
-    let optimalHeight = minHeight
-    
-    if (contentMetrics && typeof contentMetrics === 'object') {
-      const lineCount = Math.max(0, parseInt(contentMetrics.lineCount) || 0)
-      const codeBlocks = Math.max(0, parseInt(contentMetrics.codeBlocks) || 0)
-      const hasLongLines = contentMetrics.hasLongLines || false
-      
-      // Base calculation: ~20px per line of content
-      const contentHeight = Math.max(lineCount * 20, 200)
-      
-      // Add extra height for code blocks
-      const codeHeight = codeBlocks * 100
-      
-      // Add extra height for long lines (need more wrapping space)
-      const longLineBonus = hasLongLines ? 100 : 0
-      
-      // Total content height with padding
-      const totalContentHeight = contentHeight + codeHeight + longLineBonus + 100 // +100 for padding
-      
-      optimalHeight = Math.min(totalContentHeight, maxHeight)
-      optimalHeight = Math.max(optimalHeight, minHeight)
-    }
-    
-    // Ensure values are finite numbers
-    const finalWidth = isFinite(optimalWidth) ? optimalWidth : minWidth
-    const finalHeight = isFinite(optimalHeight) ? optimalHeight : minHeight
-    
-    console.log('Calculated optimal size:', { 
-      width: finalWidth, 
-      height: finalHeight, 
-      contentMetrics,
-      screenSize,
-      bounds: { minWidth, maxWidth, minHeight, maxHeight }
-    })
-    
-    return { width: finalWidth, height: finalHeight }
-  } catch (error) {
-    console.error('Error calculating optimal window size:', error)
-    // Return safe defaults
-    return { width: 800, height: 400 }
-  }
-}
-
-function expandLLMResponseWindow(contentMetrics = null) {
-  if (!llmResponseWindow) {
-    console.error('Cannot expand LLM response window - window does not exist')
-    return
-  }
-  
-  if (llmResponseWindow.isDestroyed()) {
-    console.error('Cannot expand LLM response window - window is destroyed')
-    return
-  }
-  
-  // Get current window bounds for comparison
-  const currentBounds = llmResponseWindow.getBounds()
-  console.log('Current window bounds:', currentBounds)
-  
-  // Calculate optimal size based on content
-  const { width: windowWidth, height: windowHeight } = calculateOptimalWindowSize(contentMetrics)
-  
-  // Calculate position
-  const mainBounds = mainWindow.getBounds()
-  const screenSize = screen.getPrimaryDisplay().workAreaSize
-  
-  const windowX = mainBounds.x
-  const windowY = Math.max(50, mainBounds.y + mainBounds.height + 10)
-  
-  // Ensure window doesn't go off screen
-  const maxY = screenSize.height - windowHeight - 50
-  const finalY = Math.min(windowY, maxY)
-  
-  console.log(`Expanding LLM Response window from ${currentBounds.width}x${currentBounds.height} to ${windowWidth}x${windowHeight}`)
-  console.log(`New position: (${windowX}, ${finalY})`)
-  
-  // Set bounds immediately with validation
-  try {
-    // Validate all values before setting bounds
-    const validX = Math.round(isFinite(windowX) ? windowX : 100)
-    const validY = Math.round(isFinite(finalY) ? finalY : 100)
-    const validWidth = Math.round(isFinite(windowWidth) ? windowWidth : 800)
-    const validHeight = Math.round(isFinite(windowHeight) ? windowHeight : 400)
-    
-    console.log(`Setting bounds: x=${validX}, y=${validY}, width=${validWidth}, height=${validHeight}`)
-    
-    llmResponseWindow.setBounds({
-      x: validX,
-      y: validY,
-      width: validWidth,
-      height: validHeight
-    })
-    
-    // Verify the expansion worked
-    const newBounds = llmResponseWindow.getBounds()
-    console.log('Verified new bounds:', newBounds)
-    
-    // Make sure window is visible and on top
-    if (!llmResponseWindow.isVisible()) {
-      llmResponseWindow.show()
-    }
-    llmResponseWindow.focus()
-    
-  } catch (error) {
-    console.error('Error expanding LLM response window:', error)
-    // Fallback to safe size
-    try {
-      llmResponseWindow.setBounds({ x: 100, y: 100, width: 800, height: 400 })
-    } catch (fallbackError) {
-      console.error('Even fallback resize failed:', fallbackError)
+      logger.info("App name updated for stealth mode", {
+        appName,
+        processTitle: process.title,
+        appGetName: app.getName(),
+        iconKey,
+        platform: process.platform,
+      });
+    } catch (error) {
+      logger.error("Failed to update app name", { error: error.message });
     }
   }
 }
 
-function showLLMResponseWindowWithLoading() {
-  // Create and show LLM response window if it doesn't exist
-  if (!llmResponseWindow) {
-    createLLMResponseWindow()
-  }
-  
-  // Ensure window is shown and focused
-  if (llmResponseWindow) {
-    if (!llmResponseWindow.isVisible()) {
-      llmResponseWindow.show()
-    }
-    llmResponseWindow.focus()
-    activeWindow = 'llm-response'
-    
-    // Set initial interaction state to match global state
-    llmResponseWindow.setIgnoreMouseEvents(!isWindowInteractive, { forward: true })
-    
-    // Ensure desktop following properties are set
-    if (process.platform === 'darwin') {
-      llmResponseWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-      llmResponseWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    }
-    
-    // Send current interaction state
-    if (isWindowInteractive) {
-      llmResponseWindow.webContents.send('interaction-enabled')
-    } else {
-      llmResponseWindow.webContents.send('interaction-disabled')
-    }
-    
-    // Send loading state to window (stays compact during loading)
-    llmResponseWindow.webContents.send('show-loading')
-  }
-}
+new ApplicationController();

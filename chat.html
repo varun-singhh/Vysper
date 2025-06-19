@@ -1,831 +1,989 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta charset="UTF-8">
+  <head>
+    <meta charset="UTF-8" />
     <title>Transcription</title>
+    <link href="./src/styles/common.css" rel="stylesheet" />
     <style>
-        @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css');
-        
-        body {
-            background: transparent !important;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      @import url("https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css");
+
+      body {
+        background: transparent !important;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          sans-serif;
+      }
+
+      .chat-container {
+        width: 100%;
+        height: 100vh;
+        background: linear-gradient(
+          135deg,
+          rgba(0, 0, 0, 0.3) 0%,
+          rgba(20, 20, 20, 0.4) 100%
+        );
+        backdrop-filter: blur(25px);
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 4px 25px rgba(0, 0, 0, 0.15);
+        display: flex;
+        flex-direction: column;
+        -webkit-app-region: drag;
+      }
+      .chat-header {
+        padding: 16px 20px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        -webkit-app-region: drag;
+        background: rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(10px);
+        cursor: move;
+        flex-shrink: 0;
+      }
+      .header-title {
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 14px;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        pointer-events: none;
+      }
+      .recording-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #ff4757;
+        animation: pulse 2s infinite;
+        display: none;
+        box-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
+      }
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+          transform: scale(1);
         }
-        .chat-container {
-            width: 100%;
-            height: 100vh;
-            background: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 0%, rgba(20, 20, 20, 0.4) 100%);
-            backdrop-filter: blur(25px);
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 4px 25px rgba(0, 0, 0, 0.15);
-            display: flex;
-            flex-direction: column;
-            -webkit-app-region: drag;
+        50% {
+          opacity: 0.7;
+          transform: scale(1.1);
         }
-        .chat-header {
-            padding: 16px 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            -webkit-app-region: no-drag;
-            background: rgba(0, 0, 0, 0.2);
-            backdrop-filter: blur(10px);
+        100% {
+          opacity: 1;
+          transform: scale(1);
         }
-        .header-title {
-            color: rgba(255, 255, 255, 0.95);
-            font-size: 14px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+      }
+      .chat-messages {
+        flex: 1;
+        padding: 20px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-app-region: no-drag;
+        box-sizing: border-box;
+        /* Removed max-height restriction */
+      }
+      .message {
+        margin-bottom: 16px;
+        padding: 12px 16px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 8px;
+        border-left: 3px solid rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(5px);
+        word-wrap: break-word;
+        word-break: break-word;
+        /* Removed all height restrictions */
+      }
+      .message.transcription {
+        background: rgba(76, 175, 80, 0.15);
+        animation: fadeInSlide 0.1s ease-out;
+        position: relative;
+      }
+
+      .message.transcription::before {
+        position: absolute;
+        left: -8px;
+        top: 8px;
+        font-size: 12px;
+        color: white;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      @keyframes fadeInSlide {
+        from {
+          opacity: 0;
+          transform: translateX(-20px);
+          background: rgba(76, 175, 80, 0.3);
         }
-        .recording-indicator {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #ff4757;
-            animation: pulse 2s infinite;
-            display: none;
-            box-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
+        to {
+          opacity: 1;
+          transform: translateX(0);
+          background: rgba(76, 175, 80, 0.15);
         }
-        @keyframes pulse {
-            0% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.7; transform: scale(1.1); }
-            100% { opacity: 1; transform: scale(1); }
+      }
+      .message.system {
+        background: rgba(33, 150, 243, 0.1);
+      }
+      .message.error {
+        background: rgba(244, 67, 54, 0.1);
+      }
+      .message.user {
+        background: rgba(255, 152, 0, 0.1);
+      }
+      .message.assistant {
+        background: rgba(156, 39, 176, 0.1);
+        border-left: 3px solid #9c27b0;
+        /* Removed all height restrictions and overflow hidden */
+        display: block;
+      }
+      
+      .message.assistant .message-text {
+        /* Removed all height restrictions and overflow hidden */
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      /* Ensure all content in assistant messages is fully visible */
+      .message.assistant *,
+      .message.assistant .bullet-point,
+      .message.assistant .numbered-point,
+      .message.assistant strong,
+      .message.assistant em,
+      .message.assistant code,
+      .message.assistant pre,
+      .message.assistant ul,
+      .message.assistant ol,
+      .message.assistant li,
+      .message.assistant h1,
+      .message.assistant h2,
+      .message.assistant h3,
+      .message.assistant h4,
+      .message.assistant h5,
+      .message.assistant h6,
+      .message.assistant p,
+      .message.assistant blockquote {
+        /* Remove all height restrictions */
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+      }
+      
+      /* Markdown formatting for assistant messages */
+      .message.assistant .bullet-point {
+        margin: 4px 0;
+        padding-left: 8px;
+        line-height: 1.4;
+        word-wrap: break-word;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      .message.assistant .numbered-point {
+        margin: 4px 0;
+        padding-left: 16px;
+        line-height: 1.4;
+        position: relative;
+        counter-increment: list-counter;
+        word-wrap: break-word;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      .message.assistant .numbered-point::before {
+        content: counter(list-counter) ". ";
+        position: absolute;
+        left: 0;
+        font-weight: 500;
+        color: rgba(156, 39, 176, 0.8);
+      }
+      
+      .message.assistant {
+        counter-reset: list-counter;
+      }
+      
+      .message.assistant strong {
+        font-weight: 600;
+        color: rgba(255, 255, 255, 1);
+      }
+      
+      .message.assistant em {
+        font-style: italic;
+        color: rgba(255, 255, 255, 0.9);
+      }
+      
+      .message.assistant code {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-family: 'Monaco', 'Menlo', monospace;
+        font-size: 11px;
+        color: #64ffda;
+        display: inline;
+      }
+      
+      /* Ensure code blocks are fully visible */
+      .message.assistant pre {
+        background: rgba(0, 0, 0, 0.4);
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-family: 'Monaco', 'Menlo', monospace;
+        font-size: 11px;
+        color: #64ffda;
+        overflow-x: auto;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        margin: 8px 0;
+      }
+      
+      .message.assistant pre code {
+        background: transparent;
+        padding: 0;
+        border-radius: 0;
+      }
+      
+      /* Ensure lists are fully visible */
+      .message.assistant ul,
+      .message.assistant ol {
+        margin: 8px 0;
+        padding-left: 20px;
+      }
+      
+      .message.assistant li {
+        margin: 4px 0;
+        line-height: 1.4;
+      }
+      
+      /* Ensure headings are fully visible */
+      .message.assistant h1,
+      .message.assistant h2,
+      .message.assistant h3,
+      .message.assistant h4,
+      .message.assistant h5,
+      .message.assistant h6 {
+        margin: 12px 0 8px 0;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 1);
+      }
+      
+      .message.assistant h1 { font-size: 16px; }
+      .message.assistant h2 { font-size: 15px; }
+      .message.assistant h3 { font-size: 14px; }
+      .message.assistant h4,
+      .message.assistant h5,
+      .message.assistant h6 { font-size: 13px; }
+      
+      /* Ensure paragraphs are fully visible */
+      .message.assistant p {
+        margin: 8px 0;
+      }
+      
+      /* Ensure blockquotes are fully visible */
+      .message.assistant blockquote {
+        border-left: 3px solid rgba(156, 39, 176, 0.5);
+        padding-left: 12px;
+        margin: 8px 0;
+        font-style: italic;
+        color: rgba(255, 255, 255, 0.8);
+      }
+      
+      /* Thinking indicator animation */
+      .thinking-dots {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+      
+      .thinking-dots .dot {
+        opacity: 0.4;
+        animation: thinking 1.4s infinite ease-in-out;
+      }
+      
+      .thinking-dots .dot:nth-child(1) { animation-delay: 0s; }
+      .thinking-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+      .thinking-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+      
+      @keyframes thinking {
+        0%, 80%, 100% {
+          opacity: 0.4;
+          transform: scale(1);
         }
-        .chat-messages {
-            flex: 1;
-            padding: 20px;
-            overflow-y: auto;
-            -webkit-app-region: no-drag;
+        40% {
+          opacity: 1;
+          transform: scale(1.2);
         }
-        .message {
-            margin-bottom: 16px;
-            padding: 12px 16px;
-            background: rgba(255, 255, 255, 0.08);
-            border-radius: 8px;
-            border-left: 3px solid rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(5px);
+      }
+      
+      .message.thinking {
+        animation: fadeIn 0.3s ease-out;
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
         }
-        .message.transcription {
-            border-left: 3px solid #4caf50;
-            background: rgba(76, 175, 80, 0.1);
+        to {
+          opacity: 1;
+          transform: translateY(0);
         }
-        .message.system {
-            border-left: 3px solid #2196f3;
-            background: rgba(33, 150, 243, 0.1);
+      }
+      .message-time {
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 11px;
+        margin-bottom: 4px;
+        font-weight: 500;
+      }
+      .message-text {
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 13px;
+        line-height: 1.4;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        word-wrap: break-word;
+        word-break: break-word;
+        white-space: pre-wrap;
+        overflow-wrap: break-word;
+        max-width: 100%;
+        display: block;
+      }
+      .chat-input {
+        padding: 16px 20px;
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        -webkit-app-region: no-drag;
+        background: rgba(0, 0, 0, 0.2);
+        backdrop-filter: blur(10px);
+        flex-shrink: 0;
+      }
+      .input-container {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        padding: 8px 12px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        -webkit-app-region: no-drag;
+      }
+      .input-field {
+        flex: 1;
+        background: transparent;
+        border: none;
+        color: rgba(255, 255, 255, 0.95);
+        font-size: 13px;
+        outline: none;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      }
+      .input-field::placeholder {
+        color: rgba(255, 255, 255, 0.5);
+      }
+      .send-button {
+        background: rgba(255, 255, 255, 0.15);
+        border: none;
+        border-radius: 6px;
+        padding: 6px 10px;
+        color: rgba(255, 255, 255, 0.9);
+        cursor: pointer;
+        transition: all 0.2s;
+        -webkit-app-region: no-drag;
+      }
+      .send-button:hover {
+        background: rgba(255, 255, 255, 0.25);
+        color: rgba(255, 255, 255, 1);
+      }
+      .status-message {
+        text-align: center;
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 12px;
+        padding: 20px;
+        font-style: italic;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      }
+      .error-message {
+        color: #ff4757;
+        font-size: 12px;
+        padding: 10px;
+        text-align: center;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+      }
+      .mic-button {
+        background: rgba(255, 255, 255, 0.15);
+        border: none;
+        border-radius: 6px;
+        padding: 6px 10px;
+        color: rgba(255, 255, 255, 0.9);
+        cursor: pointer;
+        transition: all 0.2s;
+        -webkit-app-region: no-drag;
+      }
+      .mic-button:hover {
+        background: rgba(255, 255, 255, 0.25);
+        color: rgba(255, 255, 255, 1);
+      }
+      .mic-button.recording {
+        background: rgba(255, 71, 87, 0.8);
+        color: white;
+        box-shadow: 0 0 15px rgba(255, 71, 87, 0.4);
+      }
+      .help-text {
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 11px;
+        text-align: center;
+        padding: 10px;
+        line-height: 1.4;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      }
+      .interaction-indicator {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: rgba(255, 255, 255, 0.9);
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+        z-index: 1000;
+      }
+      .interaction-indicator.show {
+        opacity: 1;
+      }
+      .interaction-indicator.interactive {
+        background: rgba(76, 175, 80, 0.9);
+      }
+      .interaction-indicator.non-interactive {
+        background: rgba(244, 67, 54, 0.9);
+      }
+      .non-interactive .input-container {
+        pointer-events: none;
+        opacity: 0.5;
+      }
+      .non-interactive .mic-button {
+        pointer-events: none;
+        opacity: 0.5;
+      }
+      .non-interactive .send-button {
+        pointer-events: none;
+        opacity: 0.5;
+      }
+
+      /* Minimalist Listening Animation */
+      .listening-indicator {
+        display: none;
+        position: fixed;
+        top: 60px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(203, 203, 203, 0.3);
+        border-radius: 20px;
+        padding: 8px 16px;
+        z-index: 1000;
+        pointer-events: none;
+      }
+
+      .listening-indicator.active {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        animation: fadeInUp 0.3s ease-out;
+      }
+
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateX(-50%) translateY(10px);
         }
-        .message.error {
-            border-left: 3px solid #f44336;
-            background: rgba(244, 67, 54, 0.1);
+        to {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0);
         }
-        .message.user {
-            border-left: 3px solid #ff9800;
-            background: rgba(255, 152, 0, 0.1);
+      }
+
+      .listening-wave {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+
+      .wave-bar {
+        width: 2px;
+        background: #4caf50;
+        border-radius: 1px;
+        animation: waveAnimation 1.2s infinite ease-in-out;
+      }
+
+      .wave-bar:nth-child(1) {
+        height: 8px;
+        animation-delay: 0s;
+      }
+      .wave-bar:nth-child(2) {
+        height: 12px;
+        animation-delay: 0.15s;
+      }
+      .wave-bar:nth-child(3) {
+        height: 16px;
+        animation-delay: 0.3s;
+      }
+      .wave-bar:nth-child(4) {
+        height: 12px;
+        animation-delay: 0.45s;
+      }
+      .wave-bar:nth-child(5) {
+        height: 8px;
+        animation-delay: 0.6s;
+      }
+
+      @keyframes waveAnimation {
+        0%, 100% {
+          transform: scaleY(0.3);
+          opacity: 0.6;
         }
-        .message-time {
-            color: rgba(255, 255, 255, 0.6);
-            font-size: 11px;
-            margin-bottom: 4px;
-            font-weight: 500;
+        50% {
+          transform: scaleY(1);
+          opacity: 1;
         }
-        .message-text {
-            color: rgba(255, 255, 255, 0.95);
-            font-size: 13px;
-            line-height: 1.4;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+      }
+
+      .listening-text {
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.5px;
+      }
+
+      .listening-duration {
+        color: rgba(76, 175, 80, 0.8);
+        font-size: 10px;
+        font-family: monospace;
+        margin-left: 4px;
+      }
+
+      /* Interim text overlay */
+      .interim-overlay {
+        position: fixed;
+        bottom: 80px;
+        left: 20px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.028);
+        backdrop-filter: blur(15px);
+        border: 1px solid rgba(76, 175, 80, 0.3);
+        border-radius: 8px;
+        padding: 12px;
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 12px;
+        font-style: italic;
+        z-index: 999;
+        pointer-events: none;
+        display: none;
+        animation: slideUpFade 0.3s ease-out;
+      }
+
+      .interim-overlay.active {
+        display: block;
+      }
+
+      @keyframes slideUpFade {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
         }
-        .chat-input {
-            padding: 16px 20px;
-            border-top: 1px solid rgba(255, 255, 255, 0.08);
-            -webkit-app-region: no-drag;
-            background: rgba(0, 0, 0, 0.2);
-            backdrop-filter: blur(10px);
+        to {
+          opacity: 1;
+          transform: translateY(0);
         }
-        .input-container {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 8px 12px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-        }
-        .input-field {
-            flex: 1;
-            background: transparent;
-            border: none;
-            color: rgba(255, 255, 255, 0.95);
-            font-size: 13px;
-            outline: none;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-        }
-        .input-field::placeholder {
-            color: rgba(255, 255, 255, 0.5);
-        }
-        .send-button {
-            background: rgba(255, 255, 255, 0.15);
-            border: none;
-            border-radius: 6px;
-            padding: 6px 10px;
-            color: rgba(255, 255, 255, 0.9);
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .send-button:hover {
-            background: rgba(255, 255, 255, 0.25);
-            color: rgba(255, 255, 255, 1);
-        }
-        .status-message {
-            text-align: center;
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 12px;
-            padding: 20px;
-            font-style: italic;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-        }
-        .error-message {
-            color: #ff4757;
-            font-size: 12px;
-            padding: 10px;
-            text-align: center;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        }
-        .mic-button {
-            background: rgba(255, 255, 255, 0.15);
-            border: none;
-            border-radius: 6px;
-            padding: 6px 10px;
-            color: rgba(255, 255, 255, 0.9);
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        .mic-button:hover {
-            background: rgba(255, 255, 255, 0.25);
-            color: rgba(255, 255, 255, 1);
-        }
-        .mic-button.recording {
-            background: rgba(255, 71, 87, 0.8);
-            color: white;
-            box-shadow: 0 0 15px rgba(255, 71, 87, 0.4);
-        }
-        .help-text {
-            color: rgba(255, 255, 255, 0.7);
-            font-size: 11px;
-            text-align: center;
-            padding: 10px;
-            line-height: 1.4;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-        }
-        .debug-info {
-            background: rgba(255, 255, 255, 0.05);
-            padding: 10px;
-            margin: 10px 0;
-            border-radius: 4px;
-            font-size: 11px;
-            color: rgba(255, 255, 255, 0.7);
-        }
-        .interaction-indicator {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.8);
-            color: rgba(255, 255, 255, 0.9);
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 500;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-            pointer-events: none;
-            z-index: 1000;
-        }
-        .interaction-indicator.show {
-            opacity: 1;
-        }
-        .interaction-indicator.interactive {
-            background: rgba(76, 175, 80, 0.9);
-        }
-        .interaction-indicator.non-interactive {
-            background: rgba(244, 67, 54, 0.9);
-        }
-        .non-interactive .input-container {
-            pointer-events: none;
-            opacity: 0.5;
-        }
-        .non-interactive .mic-button {
-            pointer-events: none;
-            opacity: 0.5;
-        }
-        .non-interactive .send-button {
-            pointer-events: none;
-            opacity: 0.5;
-        }
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <div class="chat-container" id="chatContainer">
-        <div class="chat-header">
-            <div class="header-title">
-                <i class="fas fa-microphone"></i>
-                Live Transcription
-                <div class="recording-indicator" id="recordingIndicator"></div>
-            </div>
+      <div class="chat-header">
+        <div class="header-title">
+          <i class="fas fa-microphone"></i>
+          Live Transcription & Chat
+          <div class="recording-indicator" id="recordingIndicator"></div>
         </div>
-        
-        <div class="chat-messages" id="chatMessages">
-            <div class="status-message">
-                Click the microphone button or press ⌘R to start recording...
-            </div>
-            <div class="help-text">
-                <strong>Note:</strong> Speech recognition requires microphone permissions.<br>
-                If you see permission errors, check your browser/system settings.
-            </div>
-        </div>
-        
-        <div class="chat-input">
-            <div class="input-container">
-                <input type="text" class="input-field" placeholder="Type a message or transcription..." id="messageInput">
-                <button class="mic-button" id="micButton">
-                    <i class="fas fa-microphone"></i>
-                </button>
-                <button class="send-button" id="sendButton">
-                    <i class="fas fa-paper-plane"></i>
-                </button>
-            </div>
-        </div>
-    </div>
+      </div>
 
-    <!-- Interaction indicator -->
-    <div class="interaction-indicator" id="interactionIndicator">
-        <span id="interactionText">Non-Interactive</span>
-    </div>
+      <!-- Interim Text Overlay -->
+      <div class="interim-overlay" id="interimOverlay"></div>
 
+      <div class="chat-messages" id="chatMessages"></div>
+
+      <div class="chat-input">
+        <div class="input-container">
+          <input
+            type="text"
+            class="input-field"
+            placeholder="Type a message or transcription..."
+            id="messageInput"
+          />
+          <button class="mic-button" id="micButton">
+            <i class="fas fa-microphone"></i>
+          </button>
+          <button class="send-button" id="sendButton">
+            <i class="fas fa-paper-plane"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+    <script src="lib/markdown.js"></script> 
     <script>
-        const { ipcRenderer } = require('electron');
-        
-        const chatMessages = document.getElementById('chatMessages');
-        const recordingIndicator = document.getElementById('recordingIndicator');
-        const messageInput = document.getElementById('messageInput');
-        const sendButton = document.getElementById('sendButton');
-        const micButton = document.getElementById('micButton');
-        const chatContainer = document.getElementById('chatContainer');
-        const interactionIndicator = document.getElementById('interactionIndicator');
-        const interactionText = document.getElementById('interactionText');
-        
-        let isRecording = false;
-        let isInteractive = false;
-        let recognizer = null;
-        let speechConfig = null;
-        let audioConfig = null;
-        let currentTranscription = '';
-        let transcriptionTimeout = null;
-        let lastTranscriptionTime = 0;
-        
-        // Initialize Azure Speech Services
-        async function initializeSpeechServices() {
-            try {
-                // Check if Azure Speech SDK is available
-                if (typeof require !== 'undefined') {
-                    const sdk = require('microsoft-cognitiveservices-speech-sdk');
-                    
-                    // Get credentials from environment (passed from main process)
-                    const subscriptionKey = process.env.AZURE_SPEECH_KEY;
-                    const region = process.env.AZURE_SPEECH_REGION;
-                    
-                    if (!subscriptionKey || !region) {
-                        throw new Error('Azure Speech credentials not found. Please set AZURE_SPEECH_KEY and AZURE_SPEECH_REGION environment variables.');
-                    }
-                    
-                    // Initialize Azure Speech configuration
-                    speechConfig = sdk.SpeechConfig.fromSubscription(subscriptionKey, region);
-                    speechConfig.speechRecognitionLanguage = 'en-US';
-                    speechConfig.enableDictation();
-                    
-                    addMessage('Azure Speech Services initialized successfully', 'system');
-                    return true;
-                } else {
-                    throw new Error('Azure Speech SDK not available');
-                }
-            } catch (error) {
-                addMessage(`Failed to initialize Azure Speech Services: ${error.message}`, 'error');
-                return false;
-            }
+      // Use electronAPI from preload script instead of direct require
+      const whysperAPI = window.electronAPI;
+
+      const chatMessages = document.getElementById('chatMessages');
+      const recordingIndicator = document.getElementById('recordingIndicator');
+      const messageInput = document.getElementById('messageInput');
+      const sendButton = document.getElementById('sendButton');
+      const micButton = document.getElementById('micButton');
+      const chatContainer = document.getElementById('chatContainer');
+      const listeningIndicator = document.getElementById('listeningIndicator');
+      const listeningDuration = document.getElementById('listeningDuration');
+      const interimOverlay = document.getElementById('interimOverlay');
+
+      let isRecording = false;
+      let isInteractive = true;
+      let listeningStartTime = null;
+      let listeningTimer = null;
+
+      // Basic message function with markdown support for assistant messages
+      function addMessage(text, type = 'user') {
+        if (!chatMessages) {
+          console.error('Chat messages element not found!');
+          return;
         }
+
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${type}`;
+
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'message-time';
+        timeDiv.textContent = new Date().toLocaleTimeString();
+
+        const textDiv = document.createElement('div');
+        textDiv.className = 'message-text';
         
-        // Display accumulated transcription with pause detection
-        function displayTranscription(text) {
-            const now = Date.now();
-            const timeSinceLastTranscription = now - lastTranscriptionTime;
-            
-            // Clear existing timeout
-            if (transcriptionTimeout) {
-                clearTimeout(transcriptionTimeout);
-            }
-            
-            // Update current transcription
-            currentTranscription = text;
-            lastTranscriptionTime = now;
-            
-            // Set timeout to display transcription after pause (1.5 seconds)
-            transcriptionTimeout = setTimeout(() => {
-                if (currentTranscription && currentTranscription.trim()) {
-                    addMessage(currentTranscription, 'transcription');
-                    currentTranscription = '';
-                }
-            }, 1500);
+        // Format assistant messages as markdown
+        if (type === 'assistant') {
+          textDiv.innerHTML = formatMarkdown(text);
+        } else {
+          textDiv.textContent = text;
         }
+
+        messageDiv.appendChild(timeDiv);
+        messageDiv.appendChild(textDiv);
+
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      // Markdown formatter using markdown.js library
+      function formatMarkdown(text) {
+        if (!text) return '';
         
-        // Start speech recognition
-        async function startRecording() {
+        try {
+          // Use the markdown.js library for proper markdown parsing
+          if (typeof markdown !== 'undefined' && markdown.toHTML) {
+            return markdown.toHTML(text);
+          } else {
+            console.warn('Markdown library not loaded, falling back to basic formatting');
+            // Fallback to basic formatting if library fails to load
+            return text
+              .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+              .replace(/\*(.+?)\*/g, '<em>$1</em>')
+              .replace(/`(.+?)`/g, '<code>$1</code>')
+              .replace(/\n/g, '<br>');
+          }
+        } catch (error) {
+          console.error('Markdown parsing failed:', error);
+          // Fallback to basic HTML escaping
+          return text.replace(/\n/g, '<br>');
+        }
+      }
+
+      // Show thinking indicator
+      function showThinkingIndicator() {
+        const thinkingDiv = document.createElement('div');
+        thinkingDiv.className = 'message assistant thinking';
+        thinkingDiv.id = 'thinking-indicator';
+
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'message-time';
+        timeDiv.textContent = new Date().toLocaleTimeString();
+
+        const textDiv = document.createElement('div');
+        textDiv.className = 'message-text thinking-dots';
+        textDiv.innerHTML = '<span class="dot">•</span><span class="dot">•</span><span class="dot">•</span>';
+
+        thinkingDiv.appendChild(timeDiv);
+        thinkingDiv.appendChild(textDiv);
+
+        chatMessages.appendChild(thinkingDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      // Hide thinking indicator
+      function hideThinkingIndicator() {
+        const thinkingIndicator = document.getElementById('thinking-indicator');
+        if (thinkingIndicator) {
+          thinkingIndicator.remove();
+        }
+      }
+
+      // Minimalist Listening Animation Functions
+      function showListeningAnimation() {
+        if (listeningIndicator) {
+          listeningIndicator.classList.add('active');
+
+          // Start timer
+          listeningStartTime = Date.now();
+          listeningTimer = setInterval(() => {
+            if (listeningStartTime && listeningDuration) {
+              const elapsed = Math.floor((Date.now() - listeningStartTime) / 1000);
+              listeningDuration.textContent = `${elapsed}s`;
+            }
+          }, 1000);
+        }
+      }
+
+      function hideListeningAnimation() {
+        if (listeningIndicator) {
+          listeningIndicator.classList.remove('active');
+        }
+
+        // Hide interim overlay
+        if (interimOverlay) {
+          interimOverlay.classList.remove('active');
+        }
+
+        // Clear timer
+        if (listeningTimer) {
+          clearInterval(listeningTimer);
+          listeningTimer = null;
+        }
+
+        listeningStartTime = null;
+      }
+
+      function showInterimText(text) {
+        if (!interimOverlay) return;
+
+        if (text && text.trim()) {
+          interimOverlay.textContent = text;
+          interimOverlay.classList.add('active');
+        } else {
+          interimOverlay.classList.remove('active');
+        }
+      }
+
+      // Recording Event Handlers
+      function handleRecordingStarted() {
+        isRecording = true;
+
+        if (recordingIndicator) {
+          recordingIndicator.style.display = 'block';
+        }
+        if (micButton) {
+          micButton.classList.add('recording');
+        }
+
+        showListeningAnimation();
+      }
+
+      function handleRecordingStopped() {
+        isRecording = false;
+
+        if (recordingIndicator) {
+          recordingIndicator.style.display = 'none';
+        }
+        if (micButton) {
+          micButton.classList.remove('recording');
+        }
+
+        hideListeningAnimation();
+        addMessage('Stopped Listening', 'system');
+      }
+
+      function handleTranscription(text) {
+        if (text && typeof text === 'string' && text.trim().length > 0) {
+          // Hide listening animation first
+          hideListeningAnimation();
+
+          // Show transcribed text with slight delay for smooth transition
+          setTimeout(() => {
+            addMessage(text.trim(), 'transcription');
+            
+            // Show thinking indicator after transcription
+            setTimeout(() => {
+              showThinkingIndicator();
+            }, 300);
+          }, 200);
+        } else {
+          console.warn('Invalid or empty transcription text - ignoring:', text);
+        }
+      }
+
+      // Basic IPC Event Listeners - simplified
+      
+      // Listen for transcription events
+      if (whysperAPI) {
+        whysperAPI.onTranscriptionReceived((event, data) => {
+          if (data && data.text) {
+            handleTranscription(data.text);
+          } else {
+            console.warn('Invalid transcription data received:', data);
+          }
+        });
+
+        whysperAPI.onInterimTranscription((event, data) => {
+          if (data && data.text) {
+            showInterimText(data.text);
+          }
+        });
+
+        // Listen for speech status
+        whysperAPI.onSpeechStatus((event, data) => {
+          if (data && data.status) {
+            addMessage(data.status, 'system');
+
+            if (data.status.includes('started') || data.status.includes('Recording')) {
+              handleRecordingStarted();
+            } else if (data.status.includes('stopped') || data.status.includes('ended')) {
+              handleRecordingStopped();
+            }
+          }
+        });
+
+        // Listen for speech errors
+        whysperAPI.onSpeechError((event, data) => {
+          if (data && data.error) {
+            addMessage(`Error in recognizing speech`, 'error');
+            handleRecordingStopped();
+          }
+        });
+
+        // Listen for other events
+        whysperAPI.onRecordingStarted(() => {
+          handleRecordingStarted();
+        });
+
+        whysperAPI.onRecordingStopped(() => {
+          handleRecordingStopped();
+        });
+
+        whysperAPI.onSessionCleared(() => {
+          addMessage('Session memory has been cleared', 'system');
+        });
+
+        whysperAPI.onTranscriptionLlmResponse((event, data) => {
+          if (data && data.response) {
+            // Hide thinking indicator
+            hideThinkingIndicator();
+            
+            // Add assistant response with formatting
+            addMessage(data.response, 'assistant');
+          }
+        });
+      }
+
+      // UI Event Listeners
+      if (micButton) {
+        micButton.addEventListener('click', async () => {
+          if (!isInteractive) {
+            addMessage('Window is in non-interactive mode. Press Alt+A to enable interaction.', 'error');
+            return;
+          }
+
+          try {
             if (isRecording) {
-                console.log('Already recording');
-                return;
-            }
-            
-            if (!speechConfig) {
-                const initialized = await initializeSpeechServices();
-                if (!initialized) {
-                    return;
-                }
-            }
-            
-            try {
-                isRecording = true;
-                recordingIndicator.style.display = 'block';
-                micButton.classList.add('recording');
-                addMessage('Starting Azure Speech recognition...', 'system');
-                
-                // Reset transcription state
-                currentTranscription = '';
-                lastTranscriptionTime = 0;
-                if (transcriptionTimeout) {
-                    clearTimeout(transcriptionTimeout);
-                }
-                
-                // Create audio configuration for microphone input
-                const sdk = require('microsoft-cognitiveservices-speech-sdk');
-                audioConfig = sdk.AudioConfig.fromDefaultMicrophoneInput();
-                
-                // Create speech recognizer
-                recognizer = new sdk.SpeechRecognizer(speechConfig, audioConfig);
-                
-                // Set up event handlers
-                recognizer.recognizing = (s, e) => {
-                    if (e.result.reason === sdk.ResultReason.RecognizingSpeech) {
-                        console.log('Interim transcription:', e.result.text);
-                        // Don't display interim results, just accumulate
-                        currentTranscription = e.result.text;
-                    }
-                };
-                
-                recognizer.recognized = (s, e) => {
-                    if (e.result.reason === sdk.ResultReason.RecognizedSpeech) {
-                        console.log('Final transcription:', e.result.text);
-                        // Display the final transcription immediately
-                        if (e.result.text && e.result.text.trim()) {
-                            addMessage(e.result.text, 'transcription');
-                            // Send to main process for session memory
-                            ipcRenderer.send('transcription-received', e.result.text);
-                            currentTranscription = '';
-                        }
-                    } else if (e.result.reason === sdk.ResultReason.NoMatch) {
-                        console.log('No speech detected');
-                        // If no speech detected, display any accumulated text
-                        if (currentTranscription && currentTranscription.trim()) {
-                            addMessage(currentTranscription, 'transcription');
-                            ipcRenderer.send('transcription-received', currentTranscription);
-                            currentTranscription = '';
-                        }
-                    }
-                };
-                
-                recognizer.canceled = (s, e) => {
-                    console.log('Recognition canceled:', e.reason);
-                    if (e.reason === sdk.CancellationReason.Error) {
-                        console.error('Recognition error:', e.errorDetails);
-                        addMessage(`Recognition error: ${e.errorDetails}`, 'error');
-                    }
-                    stopRecording();
-                };
-                
-                recognizer.sessionStopped = (s, e) => {
-                    console.log('Recognition session stopped');
-                    stopRecording();
-                };
-                
-                // Start continuous recognition
-                recognizer.startContinuousRecognitionAsync(
-                    () => {
-                        console.log('Azure Speech recognition started');
-                        addMessage('Recording started - speak now!', 'system');
-                        ipcRenderer.send('recording-started');
-                    },
-                    (error) => {
-                        console.error('Failed to start recognition:', error);
-                        addMessage(`Failed to start recognition: ${error}`, 'error');
-                        isRecording = false;
-                        recordingIndicator.style.display = 'none';
-                        micButton.classList.remove('recording');
-                    }
-                );
-                
-            } catch (error) {
-                console.error('Failed to start recording:', error);
-                addMessage(`Failed to start recording: ${error.message}`, 'error');
-                isRecording = false;
-                recordingIndicator.style.display = 'none';
-                micButton.classList.remove('recording');
-            }
-        }
-        
-        // Stop speech recognition
-        function stopRecording() {
-            if (!isRecording) {
-                return;
-            }
-            
-            isRecording = false;
-            recordingIndicator.style.display = 'none';
-            micButton.classList.remove('recording');
-            addMessage('Stopping Azure Speech recognition...', 'system');
-            
-            // Display any remaining transcription
-            if (currentTranscription && currentTranscription.trim()) {
-                addMessage(currentTranscription, 'transcription');
-                currentTranscription = '';
-            }
-            
-            // Clear timeout
-            if (transcriptionTimeout) {
-                clearTimeout(transcriptionTimeout);
-                transcriptionTimeout = null;
-            }
-            
-            // Stop continuous recognition
-            if (recognizer) {
-                recognizer.stopContinuousRecognitionAsync(
-                    () => {
-                        console.log('Azure Speech recognition stopped');
-                        addMessage('Recording stopped', 'system');
-                        ipcRenderer.send('recording-stopped');
-                    },
-                    (error) => {
-                        console.error('Error stopping recognition:', error);
-                    }
-                );
-                
-                // Clean up recognizer
-                recognizer.close();
-                recognizer = null;
-            }
-            
-            // Clean up audio config
-            if (audioConfig) {
-                audioConfig.close();
-                audioConfig = null;
-            }
-        }
-        
-        // Handle interaction state changes
-        ipcRenderer.on('interaction-enabled', () => {
-            isInteractive = true;
-            chatContainer.classList.remove('non-interactive');
-            showInteractionIndicator('Interactive', true);
-        });
-        
-        ipcRenderer.on('interaction-disabled', () => {
-            isInteractive = false;
-            chatContainer.classList.add('non-interactive');
-            showInteractionIndicator('Non-Interactive', false);
-        });
-        
-        // Handle speech recognition events from main process (fallback)
-        ipcRenderer.on('recording-started', () => {
-            if (!isRecording) {
-                startRecording();
-            }
-        });
-        
-        ipcRenderer.on('recording-stopped', () => {
-            if (isRecording) {
-                stopRecording();
-            }
-        });
-        
-        ipcRenderer.on('transcription', (event, text) => {
-            if (text && text.trim()) {
-                addMessage(text, 'transcription');
-            }
-        });
-        
-        ipcRenderer.on('interim-transcription', (event, text) => {
-            // Handle interim results if needed
-            console.log('Interim transcription:', text);
-        });
-        
-        ipcRenderer.on('status', (event, message) => {
-            addMessage(message, 'system');
-        });
-        
-        ipcRenderer.on('error', (event, error) => {
-            addMessage(`Error: ${error}`, 'error');
-        });
-        
-        // Handle controls movement
-        ipcRenderer.on('controls-changed', (event, inChat) => {
-            // No visual feedback needed for controls movement
-        });
-        
-        // Handle skill activation
-        ipcRenderer.on('skill-activated', (event, skillName) => {
-            console.log('Skill activated in chat:', skillName);
-            
-            // Add skill-specific prompts or instructions
-            const skillPrompts = {
-                'dsa': 'DSA Interview Mode: I\'ll help you practice data structures and algorithms. Ask me to explain concepts, solve problems, or review your solutions.',
-                'behavioral': 'Behavioral Interview Mode: I\'ll help you practice STAR method responses and behavioral questions. Share your experiences and I\'ll help you structure your answers.',
-                'sales': 'Sales Mode: I\'ll help you practice sales techniques, objection handling, and closing strategies. Role-play sales scenarios with me.',
-                'presentation': 'Presentation Mode: I\'ll help you practice public speaking and presentation skills. I can provide feedback on your delivery and content.',
-                'data-science': 'Data Science Mode: I\'ll help you with machine learning concepts, statistics, and data analysis. Ask me technical questions or discuss your projects.',
-                'programming': 'Programming Mode: I\'ll help you with coding best practices, debugging, and software development concepts.',
-                'devops': 'DevOps Mode: I\'ll help you with CI/CD, cloud infrastructure, and deployment strategies.',
-                'system-design': 'System Design Mode: I\'ll help you practice large-scale system architecture and design patterns.',
-                'negotiation': 'Negotiation Mode: I\'ll help you practice negotiation strategies and conflict resolution techniques.'
-            };
-            
-            const prompt = skillPrompts[skillName] || `Ready to help with ${skillName}! Start speaking or ask me questions.`;
-            addMessage(prompt, 'system');
-        });
-        
-        // Handle session events
-        ipcRenderer.on('session-event', (event, sessionEvent) => {
-            console.log('Session event received:', sessionEvent);
-            // Optionally display session events in chat
-            // addMessage(`[${sessionEvent.time}] ${sessionEvent.action}`, 'system');
-        });
-        
-        // Handle session cleared
-        ipcRenderer.on('session-cleared', () => {
-            console.log('Session memory cleared');
-            addMessage('Session memory has been cleared', 'system');
-        });
-        
-        // Handle session history response
-        ipcRenderer.on('session-history', (event, history) => {
-            if (history && history.length > 0) {
-                addMessage('📋 Session History:', 'system');
-                history.forEach((event, index) => {
-                    const time = event.time;
-                    const action = event.action;
-                    const details = event.details;
-                    
-                    let message = `${index + 1}. [${time}] ${action}`;
-                    if (details.text) {
-                        message += ` - "${details.text}"`;
-                    }
-                    if (details.skill) {
-                        message += ` (${details.skill})`;
-                    }
-                    
-                    addMessage(message, 'system');
-                });
+              if (whysperAPI) {
+                const result = await whysperAPI.stopSpeechRecognition();
+              }
             } else {
-                addMessage('No session history available', 'system');
+              if (whysperAPI) {
+                const result = await whysperAPI.startSpeechRecognition();
+              }
             }
+          } catch (error) {
+            addMessage("Error in recognizing speech", 'error');
+          }
         });
-        
-        // Request session history
-        function requestSessionHistory() {
-            ipcRenderer.send('request-session-history');
-        }
-        
-        // Handle session history request from main process
-        ipcRenderer.on('request-session-history', () => {
-            requestSessionHistory();
-        });
-        
-        function addMessage(text, type = 'user') {
-            const messagesContainer = document.getElementById('chatMessages');
-            const messageDiv = document.createElement('div');
+      }
+
+      if (sendButton) {
+        sendButton.addEventListener('click', async () => {
+          const text = messageInput.value.trim();
+          if (text) {
+            addMessage(text, 'user');
+            messageInput.value = '';
             
-            // Use the existing CSS classes for proper styling
-            messageDiv.className = `message ${type}`;
+            // Show thinking indicator after user message
+            setTimeout(() => {
+              showThinkingIndicator();
+            }, 300);
             
-            // Get current time
-            const now = new Date();
-            const timeString = now.toLocaleTimeString('en-US', { 
-                hour12: false, 
-                hour: '2-digit', 
-                minute: '2-digit', 
-                second: '2-digit' 
-            });
-            
-            messageDiv.innerHTML = `
-                <div class="message-time">${timeString}</div>
-                <div class="message-text">${text}</div>
-            `;
-            
-            messagesContainer.appendChild(messageDiv);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-        
-        function showInteractionIndicator(text, interactive) {
-            if (interactionText) {
-                interactionText.textContent = text;
-                interactionIndicator.className = `interaction-indicator show ${interactive ? 'interactive' : 'non-interactive'}`;
-                
-                setTimeout(() => {
-                    interactionIndicator.classList.remove('show');
-                }, 2000);
+            // Send to main process for session memory storage and LLM processing
+            try {
+              if (whysperAPI && whysperAPI.sendChatMessage) {
+                await whysperAPI.sendChatMessage(text);
+              }
+            } catch (error) {
+              console.error('Failed to send chat message to main process:', error);
             }
-        }
-        
-        // Event listeners
-        micButton.addEventListener('click', () => {
-            if (isRecording) {
-                stopRecording();
-            } else {
-                startRecording();
-            }
+          }
         });
-        
-        sendButton.addEventListener('click', () => {
+      }
+
+      if (messageInput) {
+        messageInput.addEventListener('keypress', async (e) => {
+          if (e.key === 'Enter') {
             const text = messageInput.value.trim();
             if (text) {
-                addMessage(`💬 ${text}`, 'user');
-                // Send to main process for session memory
-                ipcRenderer.send('text-input', text);
-                messageInput.value = '';
-            }
-        });
-        
-        messageInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                sendButton.click();
-            }
-        });
-        
-        // Initialize with status message
-        addMessage('Press ⌘+R to start speech recognition...', 'system');
-        
-        // Try to initialize speech services on load
-        initializeSpeechServices();
-
-        // Session memory functions
-        async function showSessionHistory() {
-            try {
-                const llmHistory = await window.electronAPI.getLLMSessionHistory()
-                const formattedHistory = await window.electronAPI.formatSessionHistory()
-                
-                // Create a comprehensive display optimized for chat context
-                let displayContent = `
-                    <div class="session-history-container">
-                        <div class="session-header">
-                            <h2 class="text-xl font-bold mb-4">Session History</h2>
-                            <div class="session-summary bg-gray-800 p-3 rounded mb-4">
-                                <p><strong>Summary:</strong> ${llmHistory.session_summary}</p>
-                                <p><strong>Duration:</strong> ${llmHistory.session_duration}</p>
-                                <p><strong>Total Events:</strong> ${llmHistory.total_events}</p>
-                            </div>
-                        </div>
-                        
-                        <div class="current-context bg-blue-900 p-3 rounded mb-4">
-                            <h3 class="font-semibold mb-2">🎯 Current Context</h3>
-                            <p><strong>Active Window:</strong> ${llmHistory.current_context.active_window}</p>
-                            <p><strong>Active Skill:</strong> ${llmHistory.current_context.active_skill || 'None'}</p>
-                            <p><strong>Recording Status:</strong> ${llmHistory.current_context.recording_status}</p>
-                            <p><strong>Last Action:</strong> ${llmHistory.current_context.last_action}</p>
-                        </div>
-                        
-                        <div class="activity-breakdown bg-green-900 p-3 rounded mb-4">
-                            <h3 class="font-semibold mb-2">📊 Activity Breakdown</h3>
-                            <p><strong>Screenshots:</strong> ${llmHistory.activity_breakdown.screenshots_taken}</p>
-                            <p><strong>Speech Sessions:</strong> ${llmHistory.activity_breakdown.speech_sessions}</p>
-                            <p><strong>Text Inputs:</strong> ${llmHistory.activity_breakdown.text_inputs}</p>
-                            <p><strong>Skills Used:</strong> ${llmHistory.activity_breakdown.skills_used.join(', ') || 'None'}</p>
-                            <p><strong>Window Switches:</strong> ${llmHistory.activity_breakdown.window_switches}</p>
-                        </div>
-                        
-                        <div class="llm-context bg-purple-900 p-3 rounded mb-4">
-                            <h3 class="font-semibold mb-2">🤖 LLM Context</h3>
-                            <p><strong>User Workflow:</strong> ${llmHistory.llm_context.user_workflow}</p>
-                            <p><strong>Primary Activities:</strong> ${llmHistory.llm_context.primary_activities.join(', ')}</p>
-                            <p><strong>Session Focus:</strong> ${llmHistory.llm_context.session_focus}</p>
-                            <p><strong>Current Context:</strong> ${llmHistory.llm_context.current_context}</p>
-                        </div>
-                        
-                        <div class="recent-activities bg-yellow-900 p-3 rounded mb-4">
-                            <h3 class="font-semibold mb-2">🕒 Recent Activities</h3>
-                            ${llmHistory.recent_activities.map(activity => 
-                                `<div class="activity-item mb-2">
-                                    <span class="text-gray-300">[${activity.time}]</span>
-                                    <span class="text-blue-300">${activity.action}</span>
-                                    <span class="text-white">- ${activity.summary}</span>
-                                </div>`
-                            ).join('')}
-                        </div>
-                        
-                        <div class="detailed-timeline">
-                            <h3 class="font-semibold mb-2">📝 Detailed Timeline</h3>
-                            <div class="timeline-content max-h-96 overflow-y-auto">
-                                ${formattedHistory}
-                            </div>
-                        </div>
-                        
-                        <div class="llm-structured-data bg-gray-700 p-3 rounded mt-4">
-                            <h3 class="font-semibold mb-2">🔧 LLM Structured Data (JSON)</h3>
-                            <details>
-                                <summary class="cursor-pointer text-blue-300">Click to view structured data for LLM consumption</summary>
-                                <pre class="text-xs mt-2 overflow-x-auto">${JSON.stringify(llmHistory, null, 2)}</pre>
-                            </details>
-                        </div>
-                    </div>
-                `
-                
-                // Show in a modal or overlay
-                const modal = document.createElement('div')
-                modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50'
-                modal.innerHTML = `
-                    <div class="bg-gray-900 text-white p-6 rounded-lg max-w-4xl max-h-screen overflow-y-auto">
-                        <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-xl font-bold">Session History</h2>
-                            <button class="text-gray-400 hover:text-white" onclick="this.closest('.fixed').remove()">✕</button>
-                        </div>
-                        ${displayContent}
-                        <div class="mt-4 text-center">
-                            <button class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded mr-2" onclick="clearSessionMemory()">Clear Memory</button>
-                            <button class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded" onclick="this.closest('.fixed').remove()">Close</button>
-                        </div>
-                    </div>
-                `
-                
-                document.body.appendChild(modal)
-                
-            } catch (error) {
-                console.error('Error showing session history:', error)
-                alert('Error loading session history')
-            }
-        }
-
-        async function clearSessionMemory() {
-            try {
-                const result = await window.electronAPI.clearSessionMemory()
-                if (result.success) {
-                    alert('Session memory cleared successfully!')
-                    // Close the modal if it's open
-                    const modal = document.querySelector('.fixed')
-                    if (modal) modal.remove()
+              addMessage(text, 'user');
+              messageInput.value = '';
+              
+              // Show thinking indicator after user message
+              setTimeout(() => {
+                showThinkingIndicator();
+              }, 300);
+              
+              // Send to main process for session memory storage and LLM processing
+              try {
+                if (whysperAPI && whysperAPI.sendChatMessage) {
+                  await whysperAPI.sendChatMessage(text);
                 }
-            } catch (error) {
-                console.error('Error clearing session memory:', error)
-                alert('Error clearing session memory')
+              } catch (error) {
+                console.error('Failed to send chat message to main process:', error);
+              }
             }
+          }
+        });
+      }
+
+      // Global keyboard shortcuts
+      document.addEventListener('keydown', (e) => {
+        if (e.altKey && e.key === 'r') {
+          e.preventDefault();
+          micButton.click();
         }
+      });
 
-        // Listen for OCR completion
-        window.electronAPI.onOcrCompleted((event, data) => {
-            console.log('OCR completed in chat:', data.text)
-            const ocrText = data.text
-            if (ocrText && ocrText.trim()) {
-                // Add OCR text to chat
-                addMessage(`📷 OCR Result: ${ocrText}`, 'transcription')
-            }
-        })
-
-        // Listen for OCR errors
-        window.electronAPI.onOcrError((event, data) => {
-            console.error('OCR error in chat:', data.error)
-            addMessage(`❌ OCR Error: ${data.error}`, 'error')
-        })
-
-        // Listen for session events
-        window.electronAPI.onSessionEvent((event, sessionEvent) => {
-            console.log('Session event in chat:', sessionEvent)
-        })
-
-        // Listen for session cleared
-        window.electronAPI.onSessionCleared(() => {
-            console.log('Session memory cleared in chat')
-        })
-
-        // Listen for LLM responses
-        window.electronAPI.onLlmResponse((event, data) => {
-            console.log('LLM response received in chat:', data)
-            addMessage(`🤖 LLM Analysis: ${data.response}`, 'system')
-        })
-
-        // Listen for LLM errors
-        window.electronAPI.onLlmError((event, data) => {
-            console.error('LLM error in chat:', data.error)
-            addMessage(`❌ LLM Error: ${data.error}`, 'error')
-        })
+      // Initialize
+      addMessage('Recording in Progress. press Alt+R to stop recording.', 'system');
     </script>
-</body>
+  </body>
 </html>

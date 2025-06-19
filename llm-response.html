@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WindowServer</title>
+    <title>Vysper</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/components/prism-core.min.js"></script>
@@ -11,8 +11,8 @@
     <link href="https://cdn.jsdelivr.net/npm/prismjs@1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
     <style>
         body {
-            background: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(20, 20, 20, 0.5) 100%);
-            -webkit-app-region: drag;
+            background: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(20, 20, 20, 0.5) 100%);;
+            -webkit-app-region: no-drag;
             color: white;
             margin: 0;
             padding: 0;
@@ -74,6 +74,7 @@
             width: 100vw;
             overflow: hidden;
             position: relative;
+            background: transparent;
         }
 
         /* Split layout improvements */
@@ -82,17 +83,14 @@
             grid-template-columns: 1fr 1fr;
             gap: 0.75rem;
             height: 100vh;
-            padding: 0.75rem;
+            padding: 0;
             box-sizing: border-box;
             overflow: hidden;
         }
 
         /* Panel improvements with proper scrolling */
         .text-panel, .code-panel {
-            background-color: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 0.5rem;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: transparent;
             overflow: hidden;
             position: relative;
             min-height: 0; /* Important for grid items */
@@ -110,7 +108,7 @@
         /* Full content layout */
         .full-content {
             height: 100vh;
-            padding: 0.75rem;
+            padding: 0;
             box-sizing: border-box;
             overflow: hidden;
             position: relative;
@@ -201,11 +199,7 @@
             justify-content: center;
             width: 200px;
             height: 60px;
-            background: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(20, 20, 20, 0.5) 100%);
-            backdrop-filter: blur(25px);
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 4px 25px rgba(0, 0, 0, 0.15);
+            background: transparent;
         }
         
         .dots-container {
@@ -248,13 +242,7 @@
             cursor: grabbing;
         }
 
-        /* Enhanced hover effects */
-        .text-panel:hover,
-        .code-panel:hover,
-        .full-content-inner:hover {
-            background-color: rgba(255, 255, 255, 0.08);
-            transition: background-color 0.2s ease;
-        }
+        /* Remove hover effects for clean content appearance */
 
         /* Override Prism theme for better visibility */
         .token.comment,
@@ -335,7 +323,7 @@
         <!-- Loading State -->
         <div id="loading" class="loading">
             <div class="loading-compact">
-                <span class="text-gray-300 text-sm font-medium mr-2">Generating</span>
+                <span class="text-gray-300 text-sm font-medium mr-2">Analyzing</span>
                 <div class="dots-container">
                     <div class="bouncing-dot"></div>
                     <div class="bouncing-dot"></div>
@@ -373,8 +361,6 @@
     </div>
 
     <script>
-        const { ipcRenderer } = require('electron');
-        
         let currentLayout = 'split';
         let hasCode = false;
         let currentSkill = 'dsa';
@@ -393,41 +379,30 @@
             gfm: true
         });
 
-        // Test if window is working
-        console.log('LLM Response window loaded');
-        console.log('ipcRenderer available:', typeof ipcRenderer !== 'undefined');
-        
-        // Set up event listeners using direct ipcRenderer
-        ipcRenderer.on('show-loading', (event) => {
-            console.log('Showing loading state');
-            showLoadingState();
-        });
-
-        ipcRenderer.on('display-llm-response', (event, data) => {
-            console.log('LLM Response window received data:', data);
-            console.log('Response length:', data.response ? data.response.length : 0);
-            console.log('Skill:', data.skill);
-            console.log('Window size before display:', window.innerWidth, 'x', window.innerHeight);
+        // Set up event listeners using electronAPI from preload script
+        if (window.electronAPI) {
+            // Set up show-loading event listener
+            window.electronAPI.onShowLoading(() => {
+                showLoadingState();
+            });
+            
+            window.electronAPI.onDisplayLlmResponse((event, data) => {
+                const response = data.content || data.response;
             
             // Check if window is still small (compact size) and request expansion
             if (window.innerWidth < 500 || window.innerHeight < 300) {
-                console.log('Window appears to still be compact size, requesting expansion...');
-                
                 // Pre-calculate content metrics for initial sizing
-                const response = data.response;
                 if (response) {
                     const codeBlocks = extractCodeBlocks(response);
                     const contentMetrics = calculateContentMetrics(response, codeBlocks);
-                    console.log('Pre-calculated content metrics for expansion:', contentMetrics);
                     
-                    ipcRenderer.invoke('expand-llm-window', contentMetrics)
+                    window.electronAPI.expandLlmWindow(contentMetrics)
                         .then(() => {
-                            console.log('Window expansion completed');
                             setTimeout(() => {
-                                console.log('Window size after expansion:', window.innerWidth, 'x', window.innerHeight);
                                 hideLoadingState();
                                 displayResponse(data);
                                 setupScrolling();
+                                setTimeout(verifyDisplayState, 300);
                             }, 200);
                         })
                         .catch(error => {
@@ -435,39 +410,28 @@
                             hideLoadingState();
                             displayResponse(data);
                             setupScrolling();
+                            setTimeout(verifyDisplayState, 300);
                         });
                 } else {
-                    // Fallback to old method if no response data
-                    ipcRenderer.send('expand-llm-window');
-                    setTimeout(() => {
-                        console.log('Window size after expansion request:', window.innerWidth, 'x', window.innerHeight);
-                        hideLoadingState();
-                        displayResponse(data);
-                        setupScrolling();
-                    }, 300);
+                    // Fallback for missing response data
+                    hideLoadingState();
+                    displayResponse(data);
+                    setupScrolling();
+                    // Verify display state after fallback
+                    setTimeout(verifyDisplayState, 400);
                 }
             } else {
-                console.log('Window is already expanded, displaying content immediately');
                 hideLoadingState();
                 displayResponse(data);
                 setupScrolling();
+                
+                // Verify display state after a short delay
+                setTimeout(verifyDisplayState, 500);
             }
-        });
-
-        // Handle interaction state changes
-        ipcRenderer.on('interaction-enabled', () => {
-            isInteractive = true;
-            document.body.classList.add('interactive-scrolling');
-            enableScrolling();
-            console.log('LLM Response window - Interactive mode enabled');
-        });
-
-        ipcRenderer.on('interaction-disabled', () => {
-            isInteractive = false;
-            document.body.classList.remove('interactive-scrolling');
-            disableScrolling();
-            console.log('LLM Response window - Interactive mode disabled');
-        });
+            });
+        } else {
+            console.error('electronAPI not available! Cannot set up event listeners.');
+        }
 
         function showLoadingState() {
             const loadingElement = document.getElementById('loading');
@@ -475,17 +439,24 @@
             
             if (loadingElement) {
                 loadingElement.classList.remove('hidden');
+                loadingElement.style.display = ''; // Remove any forced display styles
             }
             
             if (responseElement) {
                 responseElement.classList.add('hidden');
             }
+            
+            console.log('Loading state shown - should see Analyzing...');
         }
 
         function hideLoadingState() {
             const loadingElement = document.getElementById('loading');
             if (loadingElement) {
                 loadingElement.classList.add('hidden');
+                loadingElement.style.display = 'none'; // Force hide
+                console.log('Loading state hidden');
+            } else {
+                console.error('Loading element not found!');
             }
         }
 
@@ -516,52 +487,44 @@
         }
 
         function displayResponse(data) {
-            console.log('displayResponse called with data:', data);
-            
             // Show content
             const responseElement = document.getElementById('response-content');
             
-            console.log('Response element:', responseElement);
-            
             if (responseElement) {
                 responseElement.classList.remove('hidden');
-                console.log('Response content shown');
             }
 
-            // Parse the response
-            const response = data.response;
-            console.log('Response to parse:', response ? response.substring(0, 200) + '...' : 'No response');
+            // Parse the response - check both content and response properties for compatibility
+            const response = data.content || data.response;
             
             if (!response) {
-                console.error('No response data received');
+                console.error('No response data received', {
+                    dataKeys: Object.keys(data),
+                    hasContent: !!data.content,
+                    hasResponse: !!data.response
+                });
                 return;
             }
             
             // Check if response contains code blocks
             const codeBlocks = extractCodeBlocks(response);
             hasCode = codeBlocks.length > 0;
-            console.log('Code blocks found:', codeBlocks.length);
 
             // Calculate content metrics for dynamic sizing
             const contentMetrics = calculateContentMetrics(response, codeBlocks);
-            console.log('Content metrics:', contentMetrics);
 
             if (hasCode) {
                 // Split layout: text on left, code on right
-                console.log('Using split layout');
                 displaySplitLayout(response, codeBlocks);
             } else {
                 // Full layout: all content in one panel
-                console.log('Using full layout');
                 displayFullLayout(response);
             }
             
             // Request dynamic window sizing based on content
             setTimeout(() => {
-                console.log('Requesting window resize based on content metrics');
-                ipcRenderer.invoke('resize-llm-window-for-content', contentMetrics)
+                window.electronAPI.resizeLlmWindowForContent(contentMetrics)
                     .then(result => {
-                        console.log('Window resize result:', result);
                     })
                     .catch(error => {
                         console.error('Failed to resize window:', error);
@@ -582,9 +545,6 @@
                         document.querySelector('.full-content-inner')
                     ].filter(el => el !== null);
                 }
-
-                console.log('Scrollable elements found:', scrollableElements.length);
-                
                 // Reset scroll positions and ensure elements are focusable
                 scrollableElements.forEach(element => {
                     element.scrollTop = 0;
@@ -600,8 +560,6 @@
         }
 
         function enableScrolling() {
-            console.log('Enabling scrolling for', scrollableElements.length, 'elements');
-            
             scrollableElements.forEach(element => {
                 if (element) {
                     // Enable mouse/trackpad scrolling with smooth behavior
@@ -614,14 +572,11 @@
                     // Add wheel event for enhanced scrolling
                     element.addEventListener('wheel', handleWheelScroll, { passive: false });
                     
-                    console.log('Scrolling enabled for element');
                 }
             });
         }
 
         function disableScrolling() {
-            console.log('Disabling scrolling');
-            
             scrollableElements.forEach(element => {
                 if (element) {
                     element.removeEventListener('mouseenter', handleMouseEnter);
@@ -644,7 +599,7 @@
         function handleWheelScroll(e) {
             // Allow natural scrolling behavior
             // Don't prevent default to maintain smooth native scrolling
-            console.log('Wheel scroll detected on element');
+            logger.info('Wheel scroll detected on element');
         }
 
         function extractCodeBlocks(text) {
@@ -726,12 +681,12 @@
 
         // Handle window focus
         window.addEventListener('focus', () => {
-            console.log('LLM Response window focused');
+            logger.info('LLM Response window focused');
         });
 
         // Handle window close
         window.addEventListener('beforeunload', () => {
-            console.log('LLM Response window closing');
+            logger.info('LLM Response window closing');
         });
 
         // Add keyboard scrolling support for when interactive
@@ -793,6 +748,44 @@
                     break;
             }
         });
+
+        // Add verification function to ensure content is properly displayed
+        function verifyDisplayState() {
+            const loadingElement = document.getElementById('loading');
+            const responseElement = document.getElementById('response-content');
+            
+            const isLoadingHidden = loadingElement ? loadingElement.classList.contains('hidden') : true;
+            const isContentVisible = responseElement ? !responseElement.classList.contains('hidden') : false;
+            
+            console.log('Display state verification:', {
+                loadingHidden: isLoadingHidden,
+                contentVisible: isContentVisible,
+                windowVisible: !document.hidden
+            });
+            
+            if (!isLoadingHidden || !isContentVisible) {
+                console.warn('Display state inconsistent - forcing correction');
+                if (loadingElement) {
+                    loadingElement.classList.add('hidden');
+                    loadingElement.style.display = 'none';
+                }
+                if (responseElement) {
+                    responseElement.classList.remove('hidden');
+                }
+            }
+        }
+
+        // Add global debugging function
+        window.debugLLMWindow = function() {
+            logger.debug('=== LLM Window Debug Info ===');
+            logger.debug('Current layout:', currentLayout);
+            logger.debug('Has code:', hasCode);
+            logger.debug('Is interactive:', isInteractive);
+            logger.debug('Scrollable elements:', scrollableElements.length);
+            
+            const loadingElement = document.getElementById('loading');
+            const responseElement = document.getElementById('response-content');
+        };
     </script>
 </body>
 </html>

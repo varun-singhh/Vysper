@@ -1,569 +1,211 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta charset="UTF-8">
-    <title>Wysper</title>
-    <link href="./dist/output.css" rel="stylesheet">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Vysper</title>
+    <link href="./dist/output.css" rel="stylesheet" />
+    <link href="./src/styles/common.css" rel="stylesheet" />
     <style>
-        @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css');
-        
-        body {
-            background: transparent !important;
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            cursor: default;
+      body {
+        margin: 0;
+        padding: 0;
+        width: fit-content;
+        height: fit-content;
+        background: transparent;
+        -webkit-app-region: no-drag;
+      }
+
+      .command-tab {
+        height: 28px;
+        background: linear-gradient(
+          135deg,
+          rgba(0, 0, 0, 0.4) 0%,
+          rgba(20, 20, 20, 0.5) 100%
+        );
+        backdrop-filter: blur(20px);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+        padding: 0 12px;
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 11px;
+        font-weight: 600;
+        -webkit-app-region: drag;
+        flex-wrap: nowrap;
+        overflow: visible;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        width: 100%;
+        min-width: 400px;
+      }
+
+      .command-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 12px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        -webkit-app-region: no-drag;
+      }
+
+      .command-item:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+
+      .command-item i {
+        font-size: 14px;
+        transition: all 0.3s ease;
+      }
+
+      .command-item span {
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 11px;
+      }
+
+      .command-item.recording i {
+        color: #ff4757;
+        text-shadow: 0 0 10px rgba(255, 71, 87, 0.5);
+        animation: pulse 2s infinite;
+      }
+
+      .command-item.active {
+        color: #4caf50;
+        text-shadow: 0 1px 2px rgba(76, 175, 80, 0.3);
+      }
+
+      .command-item.active:hover {
+        background: rgba(76, 175, 80, 0.15);
+        color: #4caf50;
+      }
+
+      .command-separator {
+        width: 1px;
+        height: 16px;
+        background: linear-gradient(
+          to bottom,
+          transparent,
+          rgba(255, 255, 255, 0.25),
+          transparent
+        );
+        flex-shrink: 0;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        transition: all 0.3s ease;
+        position: relative;
+      }
+
+      .status-dot.interactive {
+        background-color: #10b981; /* Green for active/interactive */
+        box-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
+        animation: pulse-green 2s infinite;
+      }
+
+      .status-dot.non-interactive {
+        background: #f44336;
+        box-shadow: 0 0 10px rgba(244, 67, 54, 0.692);
+      }
+
+      .hidden-indicator {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: rgba(255, 255, 255, 0.9);
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        pointer-events: none;
+        z-index: 1000;
+      }
+
+      .hidden-indicator.show {
+        opacity: 1;
+      }
+
+      #skillIndicator {
+        color: #ffffff;
+        transition: all 0.3s ease;
+      }
+
+      #skillIndicator:hover {
+        color: #ffffff;
+      }
+
+      #skillIndicator.non-interactive {
+        color: #ffffff;
+        opacity: 0.7;
+      }
+
+      #skillIndicator.non-interactive:hover {
+        background: rgba(76, 175, 80, 0.05);
+        border-color: rgba(76, 175, 80, 0.15);
+        color: #ffffff;
+      }
+
+      #settingsIndicator {
+        color: #ffffff;
+        transition: all 0.3s ease;
+      }
+
+      #settingsIndicator:hover {
+        color: #ffa726;
+        background: rgba(255, 167, 38, 0.15);
+        text-shadow: 0 1px 2px rgba(255, 167, 38, 0.3);
+      }
+
+      #settingsIndicator.active {
+        color: #ffa726;
+        text-shadow: 0 1px 2px rgba(255, 167, 38, 0.3);
+      }
+
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+          transform: scale(1);
         }
-        
-        .container {
-            width: 100%;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-            -webkit-app-region: drag;
+        50% {
+          opacity: 0.7;
+          transform: scale(1.1);
         }
-        
-        .command-tab {
-            height: 28px;
-            background: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(20, 20, 20, 0.5) 100%);
-            backdrop-filter: blur(20px);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 16px;
-            padding: 0 12px;
-            color: rgba(255, 255, 255, 0.9);
-            font-size: 11px;
-            font-weight: 600;
-            -webkit-app-region: no-drag;
-            flex-wrap: nowrap;
-            overflow: hidden;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            box-shadow: 0 2px 15px rgba(0, 0, 0, 0.2);
+        100% {
+          opacity: 1;
+          transform: scale(1);
         }
-        
-        .command-item {
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            white-space: nowrap;
-            min-width: fit-content;
-            padding: 4px 8px;
-            border-radius: 4px;
-            transition: all 0.2s ease;
-            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-        }
-        
-        .command-item:hover {
-            background: rgba(255, 255, 255, 0.15);
-            color: rgba(255, 255, 255, 1);
-        }
-        
-        .command-item.active {
-            color: #4CAF50;
-            text-shadow: 0 1px 2px rgba(76, 175, 80, 0.3);
-        }
-        
-        .command-item.active:hover {
-            background: rgba(76, 175, 80, 0.15);
-            color: #4CAF50;
-        }
-        
-        .command-separator {
-            width: 1px;
-            height: 16px;
-            background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.25), transparent);
-            flex-shrink: 0;
-        }
-        
-        .status-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            margin-left: 8px;
-            transition: all 0.3s ease;
-        }
-        
-        .status-dot.interactive {
-            background: #4CAF50;
-            box-shadow: 0 0 8px rgba(76, 175, 80, 0.6);
-        }
-        
-        .status-dot.non-interactive {
-            background: #f44336;
-            box-shadow: 0 0 8px rgba(244, 67, 54, 0.6);
-        }
-        
-        .hidden-indicator {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.8);
-            color: rgba(255, 255, 255, 0.9);
-            padding: 8px 16px;
-            border-radius: 6px;
-            font-size: 12px;
-            font-weight: 500;
-            opacity: 0;
-            transition: opacity 0.3s ease;
-            pointer-events: none;
-            z-index: 1000;
-        }
-        
-        .hidden-indicator.show {
-            opacity: 1;
-        }
-        
-        #skillIndicator {
-            background: rgba(76, 175, 80, 0.1);
-            border: 1px solid rgba(76, 175, 80, 0.3);
-            color: #ffffff;;
-            transition: all 0.3s ease;
-        }
-        
-        #skillIndicator:hover {
-            background: rgba(76, 175, 80, 0.2);
-            border-color: rgba(255, 255, 255, 0.5);
-            color: #ffffff;
-        }
-        
-        #skillIndicator.non-interactive {
-            background: rgba(76, 175, 80, 0.05);
-            border-color: rgba(76, 175, 80, 0.15);
-            color: #ffffff;;
-            opacity: 0.7;
-        }
-        
-        #skillIndicator.non-interactive:hover {
-            background: rgba(76, 175, 80, 0.05);
-            border-color: rgba(76, 175, 80, 0.15);
-            color: #ffffff;;
-        }
+      }
     </style>
-</head>
-<body>
-    <div class="container">
-        <div class="command-tab">
-            <div class="command-separator"></div>
-            <div class="command-item">
-                <i class="fas fa-camera"></i>
-                <span>⌘ + shift+ S</span>
-            </div>
-            <div class="command-separator"></div>
-            <div class="command-item">
-                <i class="fas fa-microphone"></i>
-                <span>⌘ + R</span>
-            </div>
-            <div class="command-separator"></div>
-            <div class="command-item" id="skillIndicator">
-                <i class="fas fa-brain"></i>
-                <span>DSA</span>
-            </div>
-           
-            <div class="command-separator"></div>
-            <div class="command-item">
-                <i class="fas fa-trash"></i>
-                <span>⌥ + ;</span>
-            </div>
-            <div class="command-separator"></div>
-            <div class="command-item">
-                <i class="fas fa-eye-slash"></i>
-                <span>⌘ + \</span>
-            </div>
-            <div class="status-dot non-interactive" id="statusDot"></div>
-        </div>
+  </head>
+  <body>
+    <div class="command-tab">
+      <div class="command-item">
+        <i class="fas fa-camera"></i>
+        <span>⌘⇧S</span>
+      </div>
+      <div class="command-separator"></div>
+      <div class="command-item" id="micButton">
+        <i class="fas fa-microphone"></i>
+      </div>
+      <div class="command-separator"></div>
+      <div class="command-item" id="skillIndicator">
+        <i class="fas fa-brain"></i>
+        <span>DSA</span>
+      </div>
+      <div class="command-separator"></div>
+      <div class="status-dot non-interactive" id="statusDot"></div>
     </div>
 
-    <script>
-        const { ipcRenderer } = require('electron');
-        
-        const statusDot = document.getElementById('statusDot');
-        const hiddenIndicator = document.getElementById('hiddenIndicator');
-        const controlsToggle = document.getElementById('controlsToggle');
-        const skillIndicator = document.getElementById('skillIndicator');
-        
-        let isInteractive = false;
-        let isHidden = false;
-        let controlsInChat = false;
-        let currentSkill = 'dsa';
-        
-        // Handle interaction state changes
-        ipcRenderer.on('interaction-enabled', () => {
-            isInteractive = true;
-            statusDot.className = 'status-dot interactive';
-            skillIndicator.classList.remove('non-interactive');
-        });
-        
-        ipcRenderer.on('interaction-disabled', () => {
-            isInteractive = false;
-            statusDot.className = 'status-dot non-interactive';
-            skillIndicator.classList.add('non-interactive');
-        });
-        
-        function showHiddenIndicator() {
-            hiddenIndicator.classList.add('show');
-            
-            setTimeout(() => {
-                hiddenIndicator.classList.remove('show');
-            }, 3000);
-        }
-        
-        // Handle screenshot requests
-        ipcRenderer.on('take-screenshot', () => {
-            console.log('Taking screenshot...');
-            // Screenshot functionality will be handled by main process
-        });
-        
-        // Handle recording requests
-        ipcRenderer.on('recording-started', () => {
-            console.log('Recording started');
-        });
-        
-        ipcRenderer.on('recording-stopped', () => {
-            console.log('Recording stopped');
-        });
-        
-        // Handle controls movement
-        ipcRenderer.on('controls-changed', (event, inChat) => {
-            controlsInChat = inChat;
-            if (inChat) {
-                controlsToggle.classList.add('active');
-            } else {
-                controlsToggle.classList.remove('active');
-            }
-        });
-
-        // Handle skill changes
-        ipcRenderer.on('skill-changed', (event, data) => {
-            currentSkill = data.skill;
-            updateSkillIndicator();
-            console.log('Skill changed to:', currentSkill);
-        });
-
-        // Handle skill activation
-        ipcRenderer.on('skill-activated', (event, skillName) => {
-            currentSkill = skillName;
-            updateSkillIndicator();
-            console.log('Skill activated:', skillName);
-        });
-        
-        // Initialize skill indicator
-        updateSkillIndicator();
-
-        // Keyboard shortcuts for local testing
-        document.addEventListener('keydown', (e) => {
-            if (e.metaKey && e.key === '\\') {
-                isHidden = !isHidden;
-                if (isHidden) {
-                    showHiddenIndicator();
-                }
-            }
-            
-            if (e.altKey && e.key === 'A') {
-                isInteractive = !isInteractive;
-                statusDot.className = `status-dot ${isInteractive ? 'interactive' : 'non-interactive'}`;
-            }
-        });
-
-        // Session memory functions
-        async function showSessionHistory() {
-            try {
-                const llmHistory = await window.electronAPI.getLLMSessionHistory()
-                const formattedHistory = await window.electronAPI.formatSessionHistory()
-                
-                // Create a comprehensive display
-                let displayContent = `
-                    <div class="session-history-container">
-                        <div class="session-header">
-                            <h2 class="text-xl font-bold mb-4">📋 Session History</h2>
-                            <div class="session-summary bg-gray-800 p-3 rounded mb-4">
-                                <p><strong>Summary:</strong> ${llmHistory.session_summary}</p>
-                                <p><strong>Duration:</strong> ${llmHistory.session_duration}</p>
-                                <p><strong>Total Events:</strong> ${llmHistory.total_events}</p>
-                            </div>
-                        </div>
-                        
-                        <div class="current-context bg-blue-900 p-3 rounded mb-4">
-                            <h3 class="font-semibold mb-2">�� Current Context</h3>
-                            <p><strong>Active Window:</strong> ${llmHistory.current_context.active_window}</p>
-                            <p><strong>Active Skill:</strong> ${llmHistory.current_context.active_skill || 'None'}</p>
-                            <p><strong>Recording Status:</strong> ${llmHistory.current_context.recording_status}</p>
-                            <p><strong>Last Action:</strong> ${llmHistory.current_context.last_action}</p>
-                        </div>
-                        
-                        <div class="activity-breakdown bg-green-900 p-3 rounded mb-4">
-                            <h3 class="font-semibold mb-2">📊 Activity Breakdown</h3>
-                            <p><strong>Screenshots:</strong> ${llmHistory.activity_breakdown.screenshots_taken}</p>
-                            <p><strong>Speech Sessions:</strong> ${llmHistory.activity_breakdown.speech_sessions}</p>
-                            <p><strong>Text Inputs:</strong> ${llmHistory.activity_breakdown.text_inputs}</p>
-                            <p><strong>Skills Used:</strong> ${llmHistory.activity_breakdown.skills_used.join(', ') || 'None'}</p>
-                            <p><strong>Window Switches:</strong> ${llmHistory.activity_breakdown.window_switches}</p>
-                        </div>
-                        
-                        <div class="llm-context bg-purple-900 p-3 rounded mb-4">
-                            <h3 class="font-semibold mb-2">🤖 LLM Context</h3>
-                            <p><strong>User Workflow:</strong> ${llmHistory.llm_context.user_workflow}</p>
-                            <p><strong>Primary Activities:</strong> ${llmHistory.llm_context.primary_activities.join(', ')}</p>
-                            <p><strong>Session Focus:</strong> ${llmHistory.llm_context.session_focus}</p>
-                            <p><strong>Current Context:</strong> ${llmHistory.llm_context.current_context}</p>
-                        </div>
-                        
-                        <div class="recent-activities bg-yellow-900 p-3 rounded mb-4">
-                            <h3 class="font-semibold mb-2">🕒 Recent Activities</h3>
-                            ${llmHistory.recent_activities.map(activity => 
-                                `<div class="activity-item mb-2">
-                                    <span class="text-gray-300">[${activity.time}]</span>
-                                    <span class="text-blue-300">${activity.action}</span>
-                                    <span class="text-white">- ${activity.summary}</span>
-                                </div>`
-                            ).join('')}
-                        </div>
-                        
-                        <div class="detailed-timeline">
-                            <h3 class="font-semibold mb-2">📝 Detailed Timeline</h3>
-                            <div class="timeline-content max-h-96 overflow-y-auto">
-                                ${formattedHistory}
-                            </div>
-                        </div>
-                        
-                        <div class="llm-structured-data bg-gray-700 p-3 rounded mt-4">
-                            <h3 class="font-semibold mb-2">🔧 LLM Structured Data (JSON)</h3>
-                            <details>
-                                <summary class="cursor-pointer text-blue-300">Click to view structured data for LLM consumption</summary>
-                                <pre class="text-xs mt-2 overflow-x-auto">${JSON.stringify(llmHistory, null, 2)}</pre>
-                            </details>
-                        </div>
-                    </div>
-                `
-                
-                // Show in a modal or overlay
-                const modal = document.createElement('div')
-                modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50'
-                modal.innerHTML = `
-                    <div class="bg-gray-900 text-white p-6 rounded-lg max-w-4xl max-h-screen overflow-y-auto">
-                        <div class="flex justify-between items-center mb-4">
-                            <h2 class="text-xl font-bold">Session History</h2>
-                            <button class="text-gray-400 hover:text-white" onclick="this.closest('.fixed').remove()">✕</button>
-                        </div>
-                        ${displayContent}
-                        <div class="mt-4 text-center">
-                            <button class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded mr-2" onclick="clearSessionMemory()">Clear Memory</button>
-                            <button class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded" onclick="this.closest('.fixed').remove()">Close</button>
-                        </div>
-                    </div>
-                `
-                
-                document.body.appendChild(modal)
-                
-            } catch (error) {
-                console.error('Error showing session history:', error)
-                alert('Error loading session history')
-            }
-        }
-
-        async function clearSessionMemory() {
-            try {
-                const result = await window.electronAPI.clearSessionMemory()
-                if (result.success) {
-                    alert('Session memory cleared successfully!')
-                    // Close the modal if it's open
-                    const modal = document.querySelector('.fixed')
-                    if (modal) modal.remove()
-                }
-            } catch (error) {
-                console.error('Error clearing session memory:', error)
-                alert('Error clearing session memory')
-            }
-        }
-
-        function showNotification(message, type = 'info') {
-            const notification = document.createElement('div')
-            notification.className = `fixed top-4 right-4 p-4 rounded-lg text-white z-50 ${
-                type === 'error' ? 'bg-red-600' : 
-                type === 'success' ? 'bg-green-600' :
-                'bg-blue-600'
-            }`
-            notification.textContent = message
-            
-            document.body.appendChild(notification)
-            
-            // Auto-remove after 5 seconds
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification)
-                }
-            }, 5000)
-        }
-
-        // Listen for OCR completion
-        window.electronAPI.onOcrCompleted((event, data) => {
-            console.log('OCR completed:', data.text)
-            // You can display the OCR text in the UI here
-            const ocrText = data.text
-            if (ocrText && ocrText.trim()) {
-                // Display OCR text in a notification or overlay
-                showNotification(`OCR Text: ${ocrText.substring(0, 100)}${ocrText.length > 100 ? '...' : ''}`)
-            }
-        })
-
-        // Listen for OCR errors
-        window.electronAPI.onOcrError((event, data) => {
-            console.error('OCR error:', data.error)
-            showNotification(`OCR Error: ${data.error}`, 'error')
-        })
-
-        // Listen for session events
-        window.electronAPI.onSessionEvent((event, sessionEvent) => {
-            console.log('Session event:', sessionEvent)
-        })
-
-        // Listen for session cleared
-        window.electronAPI.onSessionCleared(() => {
-            console.log('Session memory cleared')
-        })
-
-        // Listen for LLM responses
-        window.electronAPI.onLlmResponse((event, data) => {
-            console.log('LLM response received:', data)
-            showNotification(`LLM Analysis Complete - ${data.skill || 'General'}`, 'success')
-            
-            // Show notification that response is in dedicated window
-            showNotification('LLM response displayed in new window', 'info')
-        })
-
-        // Listen for LLM errors
-        window.electronAPI.onLlmError((event, data) => {
-            console.error('LLM error:', data.error)
-            showNotification(`LLM Error: ${data.error}`, 'error')
-        })
-
-        // Listen for skill changes
-        window.electronAPI.onSkillChanged((event, data) => {
-            console.log('Skill changed in main window:', data.skill);
-            currentSkill = data.skill;
-            updateSkillIndicator();
-        });
-
-        function updateSkillIndicator() {
-            const skillNames = {
-                'dsa': 'DSA',
-                'behavioral': 'Behavioral', 
-                'sales': 'Sales',
-                'presentation': 'Presentation',
-                'data-science': 'Data Science',
-                'programming': 'Programming',
-                'devops': 'DevOps',
-                'system-design': 'System Design',
-                'negotiation': 'Negotiation'
-            };
-            
-            const skillName = skillNames[currentSkill] || currentSkill.toUpperCase();
-            const skillSpan = skillIndicator.querySelector('span');
-            if (skillSpan) {
-                skillSpan.textContent = skillName;
-                
-                // Update the title attribute for tooltip
-                const tooltip = isInteractive ? 
-                    `${skillName} - Use ⌘↑/↓ to navigate skills` : 
-                    `${skillName} - Enable interactive mode (Alt+A) to navigate`;
-                skillIndicator.title = tooltip;
-                
-                // Add a subtle animation to indicate change
-                skillIndicator.style.transform = 'scale(1.1)';
-                skillIndicator.style.transition = 'transform 0.2s ease';
-                
-                setTimeout(() => {
-                    skillIndicator.style.transform = 'scale(1)';
-                }, 200);
-            }
-        }
-
-        // Gemini configuration functions
-        async function showGeminiConfig() {
-            const status = await window.electronAPI.getGeminiStatus()
-            
-            const modal = document.createElement('div')
-            modal.className = 'fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50'
-            modal.innerHTML = `
-                <div class="bg-gray-900 text-white p-6 rounded-lg max-w-md w-full">
-                    <div class="flex justify-between items-center mb-4">
-                        <h2 class="text-xl font-bold">🤖 Gemini Flash 1.5 Configuration</h2>
-                        <button class="text-gray-400 hover:text-white" onclick="this.closest('.fixed').remove()">✕</button>
-                    </div>
-                    
-                    <div class="mb-4 p-3 rounded ${status.hasApiKey ? 'bg-green-900' : 'bg-red-900'}">
-                        <p><strong>Status:</strong> ${status.hasApiKey ? 'Configured' : 'Not Configured'}</p>
-                        <p><strong>Model:</strong> ${status.model}</p>
-                    </div>
-                    
-                    <div class="mb-4">
-                        <label class="block text-sm font-medium mb-2">API Key:</label>
-                        <input type="password" id="geminiApiKey" placeholder="Enter your Gemini API key" 
-                               class="w-full p-2 bg-gray-800 border border-gray-600 rounded text-white">
-                        <p class="text-xs text-gray-400 mt-1">
-                            Get your API key from: <a href="https://makersuite.google.com/app/apikey" target="_blank" class="text-blue-400">Google AI Studio</a>
-                        </p>
-                    </div>
-                    
-                    <div class="flex space-x-2">
-                        <button onclick="configureGemini()" class="flex-1 bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded">
-                            Configure
-                        </button>
-                        <button onclick="testGeminiConnection()" class="flex-1 bg-green-600 hover:bg-green-700 px-4 py-2 rounded">
-                            Test Connection
-                        </button>
-                    </div>
-                    
-                    <div class="mt-4 text-center">
-                        <button class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded" onclick="this.closest('.fixed').remove()">
-                            Close
-                        </button>
-                    </div>
-                </div>
-            `
-            document.body.appendChild(modal)
-        }
-
-        async function configureGemini() {
-            const apiKey = document.getElementById('geminiApiKey').value.trim()
-            if (!apiKey) {
-                showNotification('Please enter an API key', 'error')
-                return
-            }
-            
-            try {
-                const result = await window.electronAPI.setGeminiApiKey(apiKey)
-                if (result.success) {
-                    showNotification('Gemini API key configured successfully!', 'success')
-                    document.querySelector('.fixed').remove()
-                } else {
-                    showNotification(`Configuration failed: ${result.error}`, 'error')
-                }
-            } catch (error) {
-                showNotification(`Error: ${error.message}`, 'error')
-            }
-        }
-
-        async function testGeminiConnection() {
-            try {
-                const result = await window.electronAPI.testGeminiConnection()
-                if (result.success) {
-                    showNotification('Gemini connection test successful!', 'success')
-                } else {
-                    showNotification(`Connection test failed: ${result.error}`, 'error')
-                }
-            } catch (error) {
-                showNotification(`Error: ${error.message}`, 'error')
-            }
-        }
-
-        // Listen for Gemini config shortcut
-        window.electronAPI.onOpenGeminiConfig(() => {
-            showGeminiConfig()
-        })
-    </script>
-</body>
-</html> 
+    <script src="./src/ui/main-window.js"></script>
+  </body>
+</html>

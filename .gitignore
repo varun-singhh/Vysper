@@ -1,3 +1,4 @@
 node_modules
 .env
 eng.traineddata
+dist/
