@@ -117,6 +117,7 @@ class ApplicationController {
       "CommandOrControl+Shift+V": () => windowManager.toggleVisibility(),
       "CommandOrControl+Shift+I": () => windowManager.toggleInteraction(),
       "CommandOrControl+Shift+C": () => windowManager.switchToWindow("chat"),
+      "CommandOrControl+Shift+\\": () => this.clearSessionMemory(),
       "CommandOrControl+,": () => windowManager.showSettings(),
       "Alt+A": () => windowManager.toggleInteraction(),
       "Alt+R": () => this.toggleSpeechRecognition(),
@@ -148,6 +149,10 @@ class ApplicationController {
 
     speechService.on("transcription", (text) => {
       console.log("🎯 MAIN: Transcription event received:", text);
+      
+      // Add transcription to session memory
+      sessionManager.addUserInput(text, 'speech');
+      
       const windows = BrowserWindow.getAllWindows();
       console.log("📤 MAIN: Sending to", windows.length, "windows");
       
@@ -157,6 +162,19 @@ class ApplicationController {
       });
       
       console.log("✅ MAIN: Transcription events sent to all windows");
+      
+      // Automatically process transcription with LLM for intelligent response
+      setTimeout(async () => {
+        try {
+          const sessionHistory = sessionManager.getOptimizedHistory();
+          await this.processTranscriptionWithLLM(text, sessionHistory);
+        } catch (error) {
+          logger.error("Failed to process transcription with LLM", {
+            error: error.message,
+            text: text.substring(0, 100)
+          });
+        }
+      }, 500);
     });
 
     speechService.on("interim-transcription", (text) => {
@@ -286,6 +304,13 @@ class ApplicationController {
     ipcMain.handle("clear-session-memory", () => {
       sessionManager.clear();
       windowManager.broadcastToAllWindows("session-cleared");
+      return { success: true };
+    });
+
+    ipcMain.handle("send-chat-message", (event, text) => {
+      // Add chat message to session memory
+      sessionManager.addUserInput(text, 'chat');
+      logger.debug('Chat message added to session memory', { textLength: text.length });
       return { success: true };
     });
 
@@ -493,6 +518,16 @@ class ApplicationController {
     }
   }
 
+  clearSessionMemory() {
+    try {
+      sessionManager.clear();
+      windowManager.broadcastToAllWindows("session-cleared");
+      logger.info("Session memory cleared via global shortcut");
+    } catch (error) {
+      logger.error("Error clearing session memory:", error);
+    }
+  }
+
   handleUpArrow() {
     const isInteractive = windowManager.getWindowStats().isInteractive;
 
@@ -570,6 +605,9 @@ class ApplicationController {
     const newSkill = availableSkills[newIndex];
     this.activeSkill = newSkill;
 
+    // Update session manager with the new skill
+    sessionManager.setActiveSkill(newSkill);
+
     logger.info("Skill navigated via global shortcut", {
       from: availableSkills[currentIndex],
       to: newSkill,
@@ -589,7 +627,6 @@ class ApplicationController {
     const startTime = Date.now();
 
     try {
-      sessionManager.addEvent("Screenshot OCR triggered");
       windowManager.showLLMLoading();
 
       const ocrResult = await ocrService.captureAndProcess();
@@ -599,6 +636,12 @@ class ApplicationController {
         this.broadcastOCRError("No text found in screenshot");
         return;
       }
+
+      // Add OCR extracted text to session memory
+      sessionManager.addOCREvent(ocrResult.text, {
+        processingTime: ocrResult.metadata?.processingTime,
+        source: 'screenshot'
+      });
 
       this.broadcastOCRSuccess(ocrResult);
 
@@ -612,18 +655,22 @@ class ApplicationController {
 
       windowManager.hideLLMResponse();
       this.broadcastOCRError(error.message);
-      sessionManager.addEvent("Screenshot OCR failed", {
-        error: error.message,
+      
+      sessionManager.addConversationEvent({
+        role: 'system',
+        content: `Screenshot OCR failed: ${error.message}`,
+        action: 'ocr_error',
+        metadata: {
+          error: error.message
+        }
       });
     }
   }
 
   async processWithLLM(text, sessionHistory) {
     try {
-      sessionManager.addEvent("LLM processing started", {
-        skill: this.activeSkill,
-        textLength: text.length,
-      });
+      // Add user input to session memory
+      sessionManager.addUserInput(text, 'llm_input');
 
       const llmResult = await llmService.processTextWithSkill(
         text,
@@ -638,15 +685,15 @@ class ApplicationController {
         responsePreview: llmResult.response.substring(0, 200) + "...",
       });
 
-      windowManager.showLLMResponse(llmResult.response, {
+      // Add LLM response to session memory
+      sessionManager.addModelResponse(llmResult.response, {
         skill: this.activeSkill,
         processingTime: llmResult.metadata.processingTime,
         usedFallback: llmResult.metadata.usedFallback,
       });
 
-      sessionManager.addEvent("LLM processing completed", {
+      windowManager.showLLMResponse(llmResult.response, {
         skill: this.activeSkill,
-        responseLength: llmResult.response.length,
         processingTime: llmResult.metadata.processingTime,
         usedFallback: llmResult.metadata.usedFallback,
       });
@@ -659,12 +706,110 @@ class ApplicationController {
       });
 
       windowManager.hideLLMResponse();
-      sessionManager.addEvent("LLM processing failed", {
-        error: error.message,
-        skill: this.activeSkill,
+      sessionManager.addConversationEvent({
+        role: 'system',
+        content: `LLM processing failed: ${error.message}`,
+        action: 'llm_error',
+        metadata: {
+          error: error.message,
+          skill: this.activeSkill
+        }
       });
 
       this.broadcastLLMError(error.message);
+    }
+  }
+
+  async processTranscriptionWithLLM(text, sessionHistory) {
+    try {
+      // Validate input text
+      if (!text || typeof text !== 'string' || text.trim().length === 0) {
+        logger.warn("Skipping LLM processing for empty or invalid transcription", {
+          textType: typeof text,
+          textLength: text ? text.length : 0
+        });
+        return;
+      }
+
+      const cleanText = text.trim();
+      if (cleanText.length < 2) {
+        logger.debug("Skipping LLM processing for very short transcription", {
+          text: cleanText
+        });
+        return;
+      }
+
+      logger.info("Processing transcription with intelligent LLM response", {
+        skill: this.activeSkill,
+        textLength: cleanText.length,
+        textPreview: cleanText.substring(0, 100) + "..."
+      });
+
+      const llmResult = await llmService.processTranscriptionWithIntelligentResponse(
+        cleanText,
+        this.activeSkill,
+        sessionHistory.recent
+      );
+
+      // Add LLM response to session memory
+      sessionManager.addModelResponse(llmResult.response, {
+        skill: this.activeSkill,
+        processingTime: llmResult.metadata.processingTime,
+        usedFallback: llmResult.metadata.usedFallback,
+        isTranscriptionResponse: true
+      });
+
+      // Send response to chat windows
+      this.broadcastTranscriptionLLMResponse(llmResult);
+
+      logger.info("Transcription LLM response completed", {
+        responseLength: llmResult.response.length,
+        skill: this.activeSkill,
+        processingTime: llmResult.metadata.processingTime
+      });
+
+    } catch (error) {
+      logger.error("Transcription LLM processing failed", {
+        error: error.message,
+        errorStack: error.stack,
+        skill: this.activeSkill,
+        text: text ? text.substring(0, 100) : 'undefined'
+      });
+
+      // Try to provide a fallback response
+      try {
+        const fallbackResult = llmService.generateIntelligentFallbackResponse(text, this.activeSkill);
+        
+        sessionManager.addModelResponse(fallbackResult.response, {
+          skill: this.activeSkill,
+          processingTime: fallbackResult.metadata.processingTime,
+          usedFallback: true,
+          isTranscriptionResponse: true,
+          fallbackReason: error.message
+        });
+
+        this.broadcastTranscriptionLLMResponse(fallbackResult);
+        
+        logger.info("Used fallback response for transcription", {
+          skill: this.activeSkill,
+          fallbackResponse: fallbackResult.response
+        });
+        
+      } catch (fallbackError) {
+        logger.error("Fallback response also failed", {
+          fallbackError: fallbackError.message
+        });
+
+        sessionManager.addConversationEvent({
+          role: 'system',
+          content: `Transcription LLM processing failed: ${error.message}`,
+          action: 'transcription_llm_error',
+          metadata: {
+            error: error.message,
+            skill: this.activeSkill
+          }
+        });
+      }
     }
   }
 
@@ -704,6 +849,23 @@ class ApplicationController {
       error: errorMessage,
       timestamp: new Date().toISOString(),
     });
+  }
+
+  broadcastTranscriptionLLMResponse(llmResult) {
+    const broadcastData = {
+      response: llmResult.response,
+      metadata: llmResult.metadata,
+      skill: this.activeSkill,
+      isTranscriptionResponse: true
+    };
+
+    logger.info("Broadcasting transcription LLM response to all windows", {
+      responseLength: llmResult.response.length,
+      skill: this.activeSkill,
+      responsePreview: llmResult.response.substring(0, 100) + "..."
+    });
+
+    windowManager.broadcastToAllWindows("transcription-llm-response", broadcastData);
   }
 
   onWindowAllClosed() {

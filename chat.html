@@ -80,7 +80,10 @@
         flex: 1;
         padding: 20px;
         overflow-y: auto;
+        overflow-x: hidden;
         -webkit-app-region: no-drag;
+        max-height: calc(100vh - 120px);
+        box-sizing: border-box;
       }
       .message {
         margin-bottom: 16px;
@@ -89,6 +92,11 @@
         border-radius: 8px;
         border-left: 3px solid rgba(255, 255, 255, 0.2);
         backdrop-filter: blur(5px);
+        min-height: auto;
+        height: auto;
+        overflow: visible;
+        word-wrap: break-word;
+        word-break: break-word;
       }
       .message.transcription {
         background: rgba(76, 175, 80, 0.15);
@@ -131,6 +139,107 @@
       .message.user {
         background: rgba(255, 152, 0, 0.1);
       }
+      .message.assistant {
+        background: rgba(156, 39, 176, 0.1);
+        border-left: 3px solid #9c27b0;
+        min-height: auto;
+        height: auto;
+        overflow: visible;
+      }
+      
+      /* Markdown formatting for assistant messages */
+      .message.assistant .bullet-point {
+        margin: 4px 0;
+        padding-left: 8px;
+        line-height: 1.4;
+        word-wrap: break-word;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      .message.assistant .numbered-point {
+        margin: 4px 0;
+        padding-left: 16px;
+        line-height: 1.4;
+        position: relative;
+        counter-increment: list-counter;
+        word-wrap: break-word;
+        word-break: break-word;
+        overflow-wrap: break-word;
+      }
+      
+      .message.assistant .numbered-point::before {
+        content: counter(list-counter) ". ";
+        position: absolute;
+        left: 0;
+        font-weight: 500;
+        color: rgba(156, 39, 176, 0.8);
+      }
+      
+      .message.assistant {
+        counter-reset: list-counter;
+      }
+      
+      .message.assistant strong {
+        font-weight: 600;
+        color: rgba(255, 255, 255, 1);
+      }
+      
+      .message.assistant em {
+        font-style: italic;
+        color: rgba(255, 255, 255, 0.9);
+      }
+      
+      .message.assistant code {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-family: 'Monaco', 'Menlo', monospace;
+        font-size: 11px;
+        color: #64ffda;
+      }
+      
+      /* Thinking indicator animation */
+      .thinking-dots {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+      }
+      
+      .thinking-dots .dot {
+        opacity: 0.4;
+        animation: thinking 1.4s infinite ease-in-out;
+      }
+      
+      .thinking-dots .dot:nth-child(1) { animation-delay: 0s; }
+      .thinking-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+      .thinking-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+      
+      @keyframes thinking {
+        0%, 80%, 100% {
+          opacity: 0.4;
+          transform: scale(1);
+        }
+        40% {
+          opacity: 1;
+          transform: scale(1.2);
+        }
+      }
+      
+      .message.thinking {
+        animation: fadeIn 0.3s ease-out;
+      }
+      
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
       .message-time {
         color: rgba(255, 255, 255, 0.6);
         font-size: 11px;
@@ -142,6 +251,12 @@
         font-size: 13px;
         line-height: 1.4;
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+        word-wrap: break-word;
+        word-break: break-word;
+        white-space: pre-wrap;
+        overflow-wrap: break-word;
+        max-width: 100%;
+        display: block;
       }
       .chat-input {
         padding: 16px 20px;
@@ -447,7 +562,7 @@
       let listeningStartTime = null;
       let listeningTimer = null;
 
-      // Basic message function - simplified
+      // Basic message function with markdown support for assistant messages
       function addMessage(text, type = 'user') {
         if (!chatMessages) {
           console.error('Chat messages element not found!');
@@ -463,13 +578,67 @@
 
         const textDiv = document.createElement('div');
         textDiv.className = 'message-text';
-        textDiv.textContent = text;
+        
+        // Format assistant messages as markdown
+        if (type === 'assistant') {
+          textDiv.innerHTML = formatMarkdown(text);
+        } else {
+          textDiv.textContent = text;
+        }
 
         messageDiv.appendChild(timeDiv);
         messageDiv.appendChild(textDiv);
 
         chatMessages.appendChild(messageDiv);
         chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      // Simple markdown formatter for assistant messages
+      function formatMarkdown(text) {
+        if (!text) return '';
+        
+        return text
+          // Convert bullet points
+          .replace(/^[•\-\*]\s+(.+)$/gm, '<div class="bullet-point">• $1</div>')
+          // Convert numbered lists
+          .replace(/^\d+\.\s+(.+)$/gm, '<div class="numbered-point">$1</div>')
+          // Convert bold text
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          // Convert italic text
+          .replace(/\*(.+?)\*/g, '<em>$1</em>')
+          // Convert inline code
+          .replace(/`(.+?)`/g, '<code>$1</code>')
+          // Convert line breaks
+          .replace(/\n/g, '<br>');
+      }
+
+      // Show thinking indicator
+      function showThinkingIndicator() {
+        const thinkingDiv = document.createElement('div');
+        thinkingDiv.className = 'message assistant thinking';
+        thinkingDiv.id = 'thinking-indicator';
+
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'message-time';
+        timeDiv.textContent = new Date().toLocaleTimeString();
+
+        const textDiv = document.createElement('div');
+        textDiv.className = 'message-text thinking-dots';
+        textDiv.innerHTML = '<span class="dot">•</span><span class="dot">•</span><span class="dot">•</span>';
+
+        thinkingDiv.appendChild(timeDiv);
+        thinkingDiv.appendChild(textDiv);
+
+        chatMessages.appendChild(thinkingDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      // Hide thinking indicator
+      function hideThinkingIndicator() {
+        const thinkingIndicator = document.getElementById('thinking-indicator');
+        if (thinkingIndicator) {
+          thinkingIndicator.remove();
+        }
       }
 
       // Minimalist Listening Animation Functions
@@ -557,6 +726,11 @@
           // Show transcribed text with slight delay for smooth transition
           setTimeout(() => {
             addMessage(text.trim(), 'transcription');
+            
+            // Show thinking indicator after transcription
+            setTimeout(() => {
+              showThinkingIndicator();
+            }, 300);
           }, 200);
         } else {
           console.warn('Invalid or empty transcription text - ignoring:', text);
@@ -614,6 +788,16 @@
         whysperAPI.onSessionCleared(() => {
           addMessage('Session memory has been cleared', 'system');
         });
+
+        whysperAPI.onTranscriptionLlmResponse((event, data) => {
+          if (data && data.response) {
+            // Hide thinking indicator
+            hideThinkingIndicator();
+            
+            // Add assistant response with formatting
+            addMessage(data.response, 'assistant');
+          }
+        });
       }
 
       // UI Event Listeners
@@ -641,19 +825,41 @@
       }
 
       if (sendButton) {
-        sendButton.addEventListener('click', () => {
+        sendButton.addEventListener('click', async () => {
           const text = messageInput.value.trim();
           if (text) {
             addMessage(text, 'user');
             messageInput.value = '';
+            
+            // Send to main process for session memory storage
+            try {
+              if (whysperAPI && whysperAPI.sendChatMessage) {
+                await whysperAPI.sendChatMessage(text);
+              }
+            } catch (error) {
+              console.error('Failed to send chat message to main process:', error);
+            }
           }
         });
       }
 
       if (messageInput) {
-        messageInput.addEventListener('keypress', (e) => {
+        messageInput.addEventListener('keypress', async (e) => {
           if (e.key === 'Enter') {
-            sendButton.click();
+            const text = messageInput.value.trim();
+            if (text) {
+              addMessage(text, 'user');
+              messageInput.value = '';
+              
+              // Send to main process for session memory storage
+              try {
+                if (whysperAPI && whysperAPI.sendChatMessage) {
+                  await whysperAPI.sendChatMessage(text);
+                }
+              } catch (error) {
+                console.error('Failed to send chat message to main process:', error);
+              }
+            }
           }
         });
       }

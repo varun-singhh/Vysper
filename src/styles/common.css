@@ -222,6 +222,11 @@ body {
     border-radius: 8px;
     border-left: 3px solid rgba(255, 255, 255, 0.2);
     backdrop-filter: blur(5px);
+    min-height: auto;
+    height: auto;
+    overflow: visible;
+    word-wrap: break-word;
+    word-break: break-word;
 }
 
 .message.system {
@@ -244,6 +249,108 @@ body {
     background: rgba(244, 67, 54, 0.1);
 }
 
+.message.assistant {
+    border-left-color: #9c27b0;
+    background: rgba(156, 39, 176, 0.1);
+    min-height: auto;
+    height: auto;
+    overflow: visible;
+}
+
+/* Markdown formatting for assistant messages */
+.message.assistant .bullet-point {
+    margin: 4px 0;
+    padding-left: 8px;
+    line-height: 1.4;
+    word-wrap: break-word;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.message.assistant .numbered-point {
+    margin: 4px 0;
+    padding-left: 16px;
+    line-height: 1.4;
+    position: relative;
+    counter-increment: list-counter;
+    word-wrap: break-word;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.message.assistant .numbered-point::before {
+    content: counter(list-counter) ". ";
+    position: absolute;
+    left: 0;
+    font-weight: 500;
+    color: rgba(156, 39, 176, 0.8);
+}
+
+.message.assistant {
+    counter-reset: list-counter;
+}
+
+.message.assistant strong {
+    font-weight: 600;
+    color: rgba(255, 255, 255, 1);
+}
+
+.message.assistant em {
+    font-style: italic;
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.message.assistant code {
+    background: rgba(0, 0, 0, 0.3);
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-family: 'Monaco', 'Menlo', monospace;
+    font-size: 11px;
+    color: #64ffda;
+}
+
+/* Thinking indicator animation */
+.thinking-dots {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.thinking-dots .dot {
+    opacity: 0.4;
+    animation: thinking 1.4s infinite ease-in-out;
+}
+
+.thinking-dots .dot:nth-child(1) { animation-delay: 0s; }
+.thinking-dots .dot:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots .dot:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes thinking {
+    0%, 80%, 100% {
+        opacity: 0.4;
+        transform: scale(1);
+    }
+    40% {
+        opacity: 1;
+        transform: scale(1.2);
+    }
+}
+
+.message.thinking {
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .message-time {
     color: rgba(255, 255, 255, 0.6);
     font-size: 10px;
@@ -256,6 +363,12 @@ body {
     font-size: 13px;
     line-height: 1.4;
     text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+    word-wrap: break-word;
+    word-break: break-word;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    max-width: 100%;
+    display: block;
 }
 
 /* Help text styles */

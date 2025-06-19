@@ -109,7 +109,85 @@ class LLMService {
     }
   }
 
+  async processTranscriptionWithIntelligentResponse(text, activeSkill, sessionMemory = []) {
+    if (!this.isInitialized) {
+      throw new Error('LLM service not initialized. Check Gemini API key configuration.');
+    }
+
+    const startTime = Date.now();
+    this.requestCount++;
+    
+    try {
+      logger.info('Processing transcription with intelligent response', {
+        activeSkill,
+        textLength: text.length,
+        hasSessionMemory: sessionMemory.length > 0,
+        requestId: this.requestCount
+      });
+
+      const geminiRequest = this.buildIntelligentTranscriptionRequest(text, activeSkill, sessionMemory);
+      
+      // Try standard method first
+      let response;
+      try {
+        response = await this.executeRequest(geminiRequest);
+      } catch (error) {
+        // If fetch failed, try alternative method
+        if (error.message.includes('fetch failed') && config.get('llm.gemini.enableFallbackMethod')) {
+          logger.warn('Standard request failed, trying alternative method', {
+            error: error.message,
+            requestId: this.requestCount
+          });
+          response = await this.executeAlternativeRequest(geminiRequest);
+        } else {
+          throw error;
+        }
+      }
+      
+      logger.logPerformance('LLM transcription processing', startTime, {
+        activeSkill,
+        textLength: text.length,
+        responseLength: response.length,
+        requestId: this.requestCount
+      });
+
+      return {
+        response,
+        metadata: {
+          skill: activeSkill,
+          processingTime: Date.now() - startTime,
+          requestId: this.requestCount,
+          usedFallback: false,
+          isTranscriptionResponse: true
+        }
+      };
+    } catch (error) {
+      this.errorCount++;
+      logger.error('LLM transcription processing failed', {
+        error: error.message,
+        activeSkill,
+        requestId: this.requestCount
+      });
+
+      if (config.get('llm.gemini.fallbackEnabled')) {
+        return this.generateIntelligentFallbackResponse(text, activeSkill);
+      }
+      
+      throw error;
+    }
+  }
+
   buildGeminiRequest(text, activeSkill, sessionMemory) {
+    // Check if we have the new conversation history format
+    const sessionManager = require('../managers/session.manager');
+    
+    if (sessionManager && typeof sessionManager.getConversationHistory === 'function') {
+      const conversationHistory = sessionManager.getConversationHistory(15);
+      const skillContext = sessionManager.getSkillContext(activeSkill);
+      return this.buildGeminiRequestWithHistory(text, activeSkill, conversationHistory, skillContext);
+    }
+
+    // Fallback to old method for compatibility
     const requestComponents = promptLoader.getRequestComponents(
       activeSkill, 
       text, 
@@ -143,6 +221,236 @@ class LLMService {
     });
 
     return request;
+  }
+
+  buildGeminiRequestWithHistory(text, activeSkill, conversationHistory, skillContext) {
+    const request = {
+      contents: [],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 2048,
+        topK: 40,
+        topP: 0.95
+      }
+    };
+
+    // Add skill prompt as system instruction if available
+    if (skillContext.skillPrompt) {
+      request.systemInstruction = {
+        parts: [{ text: skillContext.skillPrompt }]
+      };
+      
+      logger.debug('Using skill prompt as system instruction', {
+        skill: activeSkill,
+        promptLength: skillContext.skillPrompt.length
+      });
+    }
+
+    // Add conversation history (excluding system messages) with validation
+    const conversationContents = conversationHistory
+      .filter(event => {
+        return event.role !== 'system' && 
+               event.content && 
+               typeof event.content === 'string' && 
+               event.content.trim().length > 0;
+      })
+      .map(event => {
+        const content = event.content.trim();
+        return {
+          role: event.role === 'model' ? 'model' : 'user',
+          parts: [{ text: content }]
+        };
+      });
+
+    // Add the conversation history
+    request.contents.push(...conversationContents);
+
+    // Format and validate the current user input
+    const formattedMessage = this.formatUserMessage(text, activeSkill);
+    if (!formattedMessage || formattedMessage.trim().length === 0) {
+      throw new Error('Failed to format user message or message is empty');
+    }
+
+    // Add the current user input
+    request.contents.push({
+      role: 'user',
+      parts: [{ text: formattedMessage }]
+    });
+
+    logger.debug('Built Gemini request with conversation history', {
+      skill: activeSkill,
+      historyLength: conversationHistory.length,
+      totalContents: request.contents.length,
+      hasSystemInstruction: !!request.systemInstruction
+    });
+
+    return request;
+  }
+
+  buildIntelligentTranscriptionRequest(text, activeSkill, sessionMemory) {
+    // Validate input text first
+    const cleanText = text && typeof text === 'string' ? text.trim() : '';
+    if (!cleanText) {
+      throw new Error('Empty or invalid transcription text provided to buildIntelligentTranscriptionRequest');
+    }
+
+    // Check if we have the new conversation history format
+    const sessionManager = require('../managers/session.manager');
+    
+    if (sessionManager && typeof sessionManager.getConversationHistory === 'function') {
+      const conversationHistory = sessionManager.getConversationHistory(10);
+      const skillContext = sessionManager.getSkillContext(activeSkill);
+      return this.buildIntelligentTranscriptionRequestWithHistory(cleanText, activeSkill, conversationHistory, skillContext);
+    }
+
+    // Fallback to basic intelligent request
+    const request = {
+      contents: [],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 150, // Shorter responses for transcriptions
+        topK: 40,
+        topP: 0.95
+      }
+    };
+
+    // Add intelligent filtering system instruction
+    const intelligentPrompt = this.getIntelligentTranscriptionPrompt(activeSkill);
+    if (!intelligentPrompt) {
+      throw new Error('Failed to generate intelligent transcription prompt');
+    }
+
+    request.systemInstruction = {
+      parts: [{ text: intelligentPrompt }]
+    };
+
+    request.contents.push({
+      role: 'user',
+      parts: [{ text: cleanText }]
+    });
+
+    logger.debug('Built basic intelligent transcription request', {
+      skill: activeSkill,
+      textLength: cleanText.length,
+      hasSystemInstruction: !!request.systemInstruction
+    });
+
+    return request;
+  }
+
+  buildIntelligentTranscriptionRequestWithHistory(text, activeSkill, conversationHistory, skillContext) {
+    const request = {
+      contents: [],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 150, // Shorter responses for transcriptions
+        topK: 40,
+        topP: 0.95
+      }
+    };
+
+    // Build intelligent system instruction combining skill prompt and filtering rules
+    const intelligentPrompt = this.getIntelligentTranscriptionPrompt(activeSkill);
+    const skillPrompt = skillContext.skillPrompt;
+    
+    const combinedInstruction = skillPrompt ? 
+      `${skillPrompt}\n\n${intelligentPrompt}` : 
+      intelligentPrompt;
+
+    request.systemInstruction = {
+      parts: [{ text: combinedInstruction }]
+    };
+
+    // Add recent conversation history (excluding system messages) with validation
+    const conversationContents = conversationHistory
+      .filter(event => {
+        // Filter out system messages and ensure content exists and is valid
+        return event.role !== 'system' && 
+               event.content && 
+               typeof event.content === 'string' && 
+               event.content.trim().length > 0;
+      })
+      .slice(-8) // Keep last 8 exchanges for context
+      .map(event => {
+        const content = event.content.trim();
+        if (!content) {
+          logger.warn('Empty content found in conversation history', { event });
+          return null;
+        }
+        return {
+          role: event.role === 'model' ? 'model' : 'user',
+          parts: [{ text: content }]
+        };
+      })
+      .filter(content => content !== null); // Remove any null entries
+
+    // Add the conversation history
+    request.contents.push(...conversationContents);
+
+    // Validate and add the current transcription
+    const cleanText = text && typeof text === 'string' ? text.trim() : '';
+    if (!cleanText) {
+      throw new Error('Empty or invalid transcription text provided');
+    }
+
+    request.contents.push({
+      role: 'user',
+      parts: [{ text: cleanText }]
+    });
+
+    // Ensure we have at least one content item
+    if (request.contents.length === 0) {
+      throw new Error('No valid content to send to Gemini API');
+    }
+
+    logger.debug('Built intelligent transcription request with conversation history', {
+      skill: activeSkill,
+      historyLength: conversationHistory.length,
+      totalContents: request.contents.length,
+      hasSkillPrompt: !!skillContext.skillPrompt,
+      cleanTextLength: cleanText.length
+    });
+
+    return request;
+  }
+
+  getIntelligentTranscriptionPrompt(activeSkill) {
+    return `# Intelligent Transcription Response System
+
+You are an AI assistant in ${activeSkill.toUpperCase()} mode. Your job is to intelligently respond to transcribed speech with appropriate brevity.
+
+## Response Rules:
+
+### If the transcription is casual conversation, greetings, or NOT related to ${activeSkill}:
+- Respond with: "Yeah, I'm listening. Ask your question relevant to ${activeSkill}."
+- Or similar brief acknowledgments like: "I'm here, what's your ${activeSkill} question?"
+
+### If the transcription IS relevant to ${activeSkill} or is a follow-up question:
+- Provide a SHORT, CONCISE response in bullet points
+- Maximum 3-4 bullet points
+- Each point should be brief (1-2 sentences max)
+- Focus on actionable insights
+- Avoid overwhelming the user with too much information
+
+### Examples of casual/irrelevant messages:
+- "Hello", "Hi there", "How are you?"
+- "What's the weather like?"
+- "I'm just testing this"
+- Random conversations not related to ${activeSkill}
+
+### Examples of relevant messages:
+- Actual questions about ${activeSkill} concepts
+- Follow-up questions to previous responses
+- Requests for clarification on ${activeSkill} topics
+- Problem-solving requests related to ${activeSkill}
+
+## Response Format:
+- Keep responses under 100 words
+- Use bullet points for structured answers
+- Be encouraging and helpful
+- Stay focused on ${activeSkill}
+
+Remember: Be intelligent about filtering - only provide detailed responses when the user actually needs help with ${activeSkill}.`;
   }
 
   formatUserMessage(text, activeSkill) {
@@ -398,6 +706,49 @@ class LLMService {
         processingTime: 0,
         requestId: this.requestCount,
         usedFallback: true
+      }
+    };
+  }
+
+  generateIntelligentFallbackResponse(text, activeSkill) {
+    logger.info('Generating intelligent fallback response for transcription', { activeSkill });
+
+    // Simple heuristic to determine if message seems skill-related
+    const skillKeywords = {
+      'dsa': ['algorithm', 'data structure', 'array', 'tree', 'graph', 'sort', 'search', 'complexity', 'big o'],
+      'programming': ['code', 'function', 'variable', 'class', 'method', 'bug', 'debug', 'syntax'],
+      'system-design': ['scalability', 'database', 'architecture', 'microservice', 'load balancer', 'cache'],
+      'behavioral': ['interview', 'experience', 'situation', 'leadership', 'conflict', 'team'],
+      'sales': ['customer', 'deal', 'negotiation', 'price', 'revenue', 'prospect'],
+      'presentation': ['slide', 'audience', 'public speaking', 'presentation', 'nervous'],
+      'data-science': ['data', 'model', 'machine learning', 'statistics', 'analytics', 'python', 'pandas'],
+      'devops': ['deployment', 'ci/cd', 'docker', 'kubernetes', 'infrastructure', 'monitoring'],
+      'negotiation': ['negotiate', 'compromise', 'agreement', 'terms', 'conflict resolution']
+    };
+
+    const textLower = text.toLowerCase();
+    const relevantKeywords = skillKeywords[activeSkill] || [];
+    const hasRelevantKeywords = relevantKeywords.some(keyword => textLower.includes(keyword));
+    
+    // Check for question indicators
+    const questionIndicators = ['how', 'what', 'why', 'when', 'where', 'can you', 'could you', 'should i', '?'];
+    const seemsLikeQuestion = questionIndicators.some(indicator => textLower.includes(indicator));
+
+    let response;
+    if (hasRelevantKeywords || seemsLikeQuestion) {
+      response = `I'm having trouble processing that right now, but it sounds like a ${activeSkill} question. Could you rephrase or ask more specifically about what you need help with?`;
+    } else {
+      response = `Yeah, I'm listening. Ask your question relevant to ${activeSkill}.`;
+    }
+    
+    return {
+      response,
+      metadata: {
+        skill: activeSkill,
+        processingTime: 0,
+        requestId: this.requestCount,
+        usedFallback: true,
+        isTranscriptionResponse: true
       }
     };
   }

@@ -147,6 +147,16 @@ class ChatWindowUI {
             window.electronAPI.onLlmError((event, data) => {
                 this.addMessage(`LLM Error: ${data.error}`, 'error');
             });
+            
+            window.electronAPI.onTranscriptionLlmResponse((event, data) => {
+                if (data && data.response) {
+                    // Hide thinking indicator
+                    this.hideThinkingIndicator();
+                    
+                    // Add assistant response with formatting
+                    this.addMessage(data.response, 'assistant');
+                }
+            });
         }
         
         // UI event handlers
@@ -250,6 +260,11 @@ class ChatWindowUI {
             setTimeout(() => {
                 this.addMessage(text, 'transcription');
                 console.log('✅ Transcription message added to chat');
+                
+                // Show thinking indicator after transcription
+                setTimeout(() => {
+                    this.showThinkingIndicator();
+                }, 300);
             }, 200);
             
             logger.debug('Transcription received in chat', { textLength: text.length });
@@ -277,11 +292,21 @@ class ChatWindowUI {
         logger.info('Skill activated in chat', { skill: skillName });
     }
 
-    sendMessage() {
+    async sendMessage() {
         const text = this.elements.messageInput.value.trim();
         if (text) {
             this.addMessage(text, 'user');
             this.elements.messageInput.value = '';
+            
+            // Send to main process for session memory storage
+            try {
+                if (window.electronAPI && window.electronAPI.sendChatMessage) {
+                    await window.electronAPI.sendChatMessage(text);
+                }
+            } catch (error) {
+                logger.error('Failed to send chat message to main process', { error: error.message });
+            }
+            
             logger.debug('User message sent', { textLength: text.length });
         }
     }
@@ -303,7 +328,13 @@ class ChatWindowUI {
         
         const textDiv = document.createElement('div');
         textDiv.className = 'message-text';
-        textDiv.textContent = text;
+        
+        // Format assistant messages as markdown
+        if (type === 'assistant') {
+            textDiv.innerHTML = this.formatMarkdown(text);
+        } else {
+            textDiv.textContent = text;
+        }
         
         messageDiv.appendChild(timeDiv);
         messageDiv.appendChild(textDiv);
@@ -314,6 +345,53 @@ class ChatWindowUI {
         this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
         
         console.log('✅ Message added successfully, total messages:', this.elements.chatMessages.children.length);
+    }
+
+    formatMarkdown(text) {
+        if (!text) return '';
+        
+        return text
+            // Convert bullet points
+            .replace(/^[•\-\*]\s+(.+)$/gm, '<div class="bullet-point">• $1</div>')
+            // Convert numbered lists
+            .replace(/^\d+\.\s+(.+)$/gm, '<div class="numbered-point">$1</div>')
+            // Convert bold text
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            // Convert italic text
+            .replace(/\*(.+?)\*/g, '<em>$1</em>')
+            // Convert inline code
+            .replace(/`(.+?)`/g, '<code>$1</code>')
+            // Convert line breaks
+            .replace(/\n/g, '<br>');
+    }
+
+    showThinkingIndicator() {
+        if (!this.elements.chatMessages) return;
+
+        const thinkingDiv = document.createElement('div');
+        thinkingDiv.className = 'message assistant thinking';
+        thinkingDiv.id = 'thinking-indicator';
+
+        const timeDiv = document.createElement('div');
+        timeDiv.className = 'message-time';
+        timeDiv.textContent = new Date().toLocaleTimeString();
+
+        const textDiv = document.createElement('div');
+        textDiv.className = 'message-text thinking-dots';
+        textDiv.innerHTML = '<span class="dot">•</span><span class="dot">•</span><span class="dot">•</span>';
+
+        thinkingDiv.appendChild(timeDiv);
+        thinkingDiv.appendChild(textDiv);
+
+        this.elements.chatMessages.appendChild(thinkingDiv);
+        this.elements.chatMessages.scrollTop = this.elements.chatMessages.scrollHeight;
+    }
+
+    hideThinkingIndicator() {
+        const thinkingIndicator = document.getElementById('thinking-indicator');
+        if (thinkingIndicator) {
+            thinkingIndicator.remove();
+        }
     }
 
     showInteractionIndicator(text, interactive) {
