@@ -71,6 +71,13 @@ GEMINI_API_KEY=your_gemini_api_key
 | `Cmd+Shift+\` | Clear Session Memory |
 | `Alt+G` | Gemini AI Configuration |
 
+### Important Interaction Usage Tip 
+* Enable **Interaction Mode** to scroll, click, or select inside windows.
+* Use `Cmd+Up/Down` (in Interaction Mode) to switch skills quickly.
+* Click thorugh screen works only when interaction mode is disabled
+* In **Stealth Mode**, windows are invisible to screen share & mouse.
+
+
 ## 🔧 Key Features
 
 ### Stealth Technology
@@ -127,13 +134,6 @@ GEMINI_API_KEY=your_gemini_api_key
 
 ### Session Memory
 The app remembers your interview context across multiple questions:
-```javascript
-// View session history
-await window.electronAPI.getLLMSessionHistory()
-
-// Clear for new interview
-await window.electronAPI.clearSessionMemory()
-```
 
 ### Custom Skills
 Extend with your own interview categories by adding prompt files to `/prompts/` directory.
