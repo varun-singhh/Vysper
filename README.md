@@ -192,10 +192,10 @@ GEMINI_API_KEY=your_gemini_api_key
 2. **Industry Examples**: Request relevant scenarios for your field
 3. **Follow-up Prep**: Prepare for common follow-up questions
 
-## 🛠 Technical Requirements
-
+## 🛠 Important Technical Requirements (MUST INSTALL Before Running)
 - **Node.js** 16+
 - **Tesseract OCR** (`brew install tesseract`)
+- **Audio Tool** (`brew install sox`)
 - **Azure Speech Services** (Free tier available)
 - **Google Gemini API** (Free quota included)
 
