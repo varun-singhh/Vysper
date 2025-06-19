@@ -80,11 +80,6 @@ npm run rebuild        # Clean + build current platform
 npm run release        # Clean + build all platforms
 ```
 
-#### Build Time Expectations
-- **First build**: 2-5 minutes (downloads Electron binaries)
-- **Subsequent builds**: 30-60 seconds
-- **All platforms**: 3-8 minutes depending on internet speed
-
 **Built apps will be in the `dist/` folder:**
 - **macOS**: `Vysper-1.0.0.dmg` (installer) or `Vysper-1.0.0-mac.zip` (portable)
 - **Windows**: `Vysper Setup 1.0.0.exe` (installer) or `Vysper 1.0.0.exe` (portable)
@@ -95,21 +90,6 @@ npm run release        # Clean + build all platforms
 - **Windows**: Run `.exe` installer or double-click portable version
 - **Linux**: Make `.AppImage` executable (`chmod +x`) and run, or install `.deb` with `dpkg`
 
-### Sharing with Others
-The built apps are **standalone** - no need for Node.js, npm, or any dependencies!
-- Share the `.dmg`/`.exe`/`.AppImage` files directly
-- Recipients can run immediately after installation
-- Apps work offline (except for AI features requiring internet)
-
-### Build Troubleshooting
-**Common Issues:**
-- **"electron-builder not found"**: Run `npm install` first
-- **"Package electron is only allowed in devDependencies"**: Already fixed in package.json
-- **Build fails on Windows**: Install Visual Studio Build Tools
-- **Build fails on Linux**: Install `rpm` package (`sudo apt install rpm` on Ubuntu)
-- **Large build size**: Normal for Electron apps (90-100MB)
-- **Code signing warnings**: Safe to ignore for personal use
-
 **Clean Build Process:**
 ```bash
 rm -rf node_modules dist
@@ -119,12 +99,14 @@ npm run build
 
 ### Essential Setup
 1. **Azure Speech** (for voice commands)
-   - Get free key from [Azure Portal](https://portal.azure.com)
+   - Get free key from [Azure Portal](https://azure.microsoft.com/en-us/free/students)
    - Add to `.env`: `AZURE_SPEECH_KEY=your_key`
 
 2. **Google Gemini AI** (for intelligent responses)
    - Get API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
    - Configure in app: Press `Alt+G`
+
+##  📢 🎓 Students gets $100 free credits Azure, and Free Speech To Text for 5 hours of audio
 
 ### Environment File
 Create `.env`:
@@ -139,23 +121,22 @@ GEMINI_API_KEY=your_gemini_api_key
 ### Core Functions
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+Shift+S` | Screenshot + AI Analysis |
-| `Cmd+R` | Voice Recording Toggle |
-| `Cmd+\` | Show/Hide All Windows |
-| `Alt+A` | Toggle Stealth Mode |
+| `Cmd + Shift + S` | Screenshot + AI Analysis |
+| `Alt/Option + R` | Voice Recording Toggle |
+| `Cmd + Shift + \` | Show/Hide All Windows |
+| `Alt + A` | Toggle Interactive Mode |
 
 ### Navigation
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+Shift+C` | Chat Window |
-| `Cmd+Shift+K` | Skills Selection |
-| `Cmd+,` | Settings |
+| `Cmd + Shift + C` | Chat Window |
+| `Cmd + Arrow Up/Down` | Skills Selection (only if Interactive mode is on) |
+| `Cmd + ,` | Settings |
 
 ### Session Management
 | Shortcut | Action |
 |----------|--------|
 | `Cmd+Shift+\` | Clear Session Memory |
-| `Alt+G` | Gemini AI Configuration |
 
 ### Important Interaction Usage Tip 
 * Enable **Interaction Mode** to scroll, click, or select inside windows.
@@ -181,7 +162,6 @@ GEMINI_API_KEY=your_gemini_api_key
 - **Problem Recognition** - Automatically detects interview question types
 - **Step-by-Step Solutions** - Detailed explanations with best practices
 - **Code Examples** - Multi-language implementations with optimizations
-- **Time Complexity Analysis** - Big O notation and performance insights
 
 ## 💡 Pro Tips
 
@@ -208,32 +188,20 @@ GEMINI_API_KEY=your_gemini_api_key
 - **Azure Speech Services** (Free tier available)
 - **Google Gemini API** (Free quota included)
 
-## 🔒 Privacy & Security
-
-- **Local Processing** - Screenshots analyzed locally only
-- **No Data Storage** - Session data cleared automatically
-- **Encrypted APIs** - All external communications secured
-- **Temporary Files** - Auto-deleted after processing
-
 ## 🚀 Advanced Usage
 
 ### Session Memory
 The app remembers your interview context across multiple questions:
 
-### Custom Skills
-Extend with your own interview categories by adding prompt files to `/prompts/` directory.
-
 ## 🤝 Contributing
 
-**Help make Vysper the ultimate interview companion!**
-
-We're looking for contributors to help expand this open-source project:
+**Contribute to make Vysper the ultimate interview companion, not a cheating tool!**
 
 ### Priority Areas
 - **New Interview Skills** - Add specialized domains (Finance, Marketing, etc.)
 - **Language Support** - Expand beyond English for global users
 - **Platform Extensions** - Windows and Linux compatibility
-- **Mobile Integration** - Companion mobile app for practice sessions
+- **LLM Improvements** - Multiple LLM Model selections for the response
 - **UI/UX Improvements** - Enhanced interface and user experience
 
 ### How to Contribute
@@ -242,7 +210,7 @@ We're looking for contributors to help expand this open-source project:
 3. **Report issues** for bugs or feature requests
 4. **Submit pull requests** for improvements
 5. **Improve documentation** and add examples
-6. **Share your interview success stories**
+6. **Share your success stories**
 
 
 ### Demo
