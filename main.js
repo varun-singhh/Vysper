@@ -121,6 +121,11 @@ class ApplicationController {
       "CommandOrControl+,": () => windowManager.showSettings(),
       "Alt+A": () => windowManager.toggleInteraction(),
       "Alt+R": () => this.toggleSpeechRecognition(),
+      "CommandOrControl+Shift+T": () => windowManager.forceAlwaysOnTopForAllWindows(),
+      "CommandOrControl+Shift+Alt+T": () => {
+        const results = windowManager.testAlwaysOnTopForAllWindows();
+        logger.info('Always-on-top test triggered via shortcut', results);
+      },
       // Context-sensitive shortcuts based on interaction mode
       "CommandOrControl+Up": () => this.handleUpArrow(),
       "CommandOrControl+Down": () => this.handleDownArrow(),
@@ -147,21 +152,15 @@ class ApplicationController {
       });
     });
 
-    speechService.on("transcription", (text) => {
-      console.log("🎯 MAIN: Transcription event received:", text);
-      
+    speechService.on("transcription", (text) => {      
       // Add transcription to session memory
       sessionManager.addUserInput(text, 'speech');
       
       const windows = BrowserWindow.getAllWindows();
-      console.log("📤 MAIN: Sending to", windows.length, "windows");
       
       windows.forEach((window) => {
-        console.log("📡 MAIN: Sending transcription to window:", window.getTitle());
         window.webContents.send("transcription-received", { text });
       });
-      
-      console.log("✅ MAIN: Transcription events sent to all windows");
       
       // Automatically process transcription with LLM for intelligent response
       setTimeout(async () => {
@@ -200,33 +199,27 @@ class ApplicationController {
     ipcMain.handle("take-screenshot", () => this.triggerScreenshotOCR());
 
     ipcMain.handle("start-speech-recognition", () => {
-      console.log("🎤 IPC: start-speech-recognition called");
       speechService.startRecording();
       return speechService.getStatus();
     });
 
     ipcMain.handle("stop-speech-recognition", () => {
-      console.log("🛑 IPC: stop-speech-recognition called");
       speechService.stopRecording();
       return speechService.getStatus();
     });
 
     // Also handle direct send events for fallback
     ipcMain.on("start-speech-recognition", () => {
-      console.log("🎤 IPC Send: start-speech-recognition called");
       speechService.startRecording();
     });
 
     ipcMain.on("stop-speech-recognition", () => {
-      console.log("🛑 IPC Send: stop-speech-recognition called");
       speechService.stopRecording();
     });
 
     ipcMain.on("chat-window-ready", () => {
-      console.log("📋 Chat window is ready!");
       // Send a test message to confirm communication
       setTimeout(() => {
-        console.log("📡 Sending test message to chat window...");
         windowManager.broadcastToAllWindows("transcription-received", {
           text: "Test message from main process - chat window communication is working!",
         });
@@ -234,8 +227,6 @@ class ApplicationController {
     });
 
     ipcMain.on("test-chat-window", () => {
-      console.log("🧪 Chat window test request received!");
-      console.log("🧪 Sending immediate test transcription...");
       windowManager.broadcastToAllWindows("transcription-received", {
         text: "🧪 IMMEDIATE TEST: Chat window IPC communication test successful!",
       });
@@ -305,6 +296,16 @@ class ApplicationController {
       sessionManager.clear();
       windowManager.broadcastToAllWindows("session-cleared");
       return { success: true };
+    });
+
+    ipcMain.handle("force-always-on-top", () => {
+      windowManager.forceAlwaysOnTopForAllWindows();
+      return { success: true };
+    });
+
+    ipcMain.handle("test-always-on-top", () => {
+      const results = windowManager.testAlwaysOnTopForAllWindows();
+      return { success: true, results };
     });
 
     ipcMain.handle("send-chat-message", async (event, text) => {
@@ -987,8 +988,6 @@ class ApplicationController {
       const path = require("path");
       const fs = require("fs");
 
-      console.log("Updating app icon to:", iconKey);
-
       // Icon mapping for available icons in assests/icons folder
       const iconPaths = {
         terminal: "assests/icons/terminal.png",
@@ -1012,7 +1011,6 @@ class ApplicationController {
       }
 
       const fullIconPath = path.resolve(iconPath);
-      console.log("Icon path resolved to:", fullIconPath);
 
       if (!fs.existsSync(fullIconPath)) {
         logger.error("Icon file not found", {
@@ -1025,22 +1023,18 @@ class ApplicationController {
       // Set app icon for dock/taskbar
       if (process.platform === "darwin") {
         // macOS - update dock icon
-        console.log("Setting macOS dock icon...");
         app.dock.setIcon(fullIconPath);
 
         // Force dock refresh with multiple attempts
         setTimeout(() => {
           app.dock.setIcon(fullIconPath);
-          console.log("Dock icon set (retry 1)");
         }, 100);
 
         setTimeout(() => {
           app.dock.setIcon(fullIconPath);
-          console.log("Dock icon set (retry 2)");
         }, 500);
       } else {
         // Windows/Linux - update window icons
-        console.log("Setting window icons for Windows/Linux...");
         windowManager.windows.forEach((window, type) => {
           if (window && !window.isDestroyed()) {
             window.setIcon(fullIconPath);

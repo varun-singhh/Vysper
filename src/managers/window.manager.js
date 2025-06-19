@@ -114,12 +114,38 @@ class WindowManager {
     this.windows.set('main', window);
     this.isVisible = true;
     
+    // Immediate always-on-top enforcement for main window
+    if (process.platform === 'darwin') {
+      try {
+        window.setAlwaysOnTop(true, 'screen-saver', 2);
+      } catch (error) {
+        window.setAlwaysOnTop(true, 'floating', 2);
+      }
+    } else {
+      window.setAlwaysOnTop(true);
+    }
+    
     // DevTools can be opened manually if needed for debugging
     // window.webContents.openDevTools({ mode: 'detach' });
     
     // Wait for app to fully initialize and detect current desktop
     setTimeout(() => {
       this.showOnCurrentDesktop(window);
+      
+      // Additional enforcement after showing
+      setTimeout(() => {
+        if (!window.isDestroyed()) {
+          if (process.platform === 'darwin') {
+            try {
+              window.setAlwaysOnTop(true, 'screen-saver', 2);
+            } catch (error) {
+              window.setAlwaysOnTop(true, 'floating', 2);
+            }
+          } else {
+            window.setAlwaysOnTop(true);
+          }
+        }
+      }, 200);
     }, 100);
     
     return window;
@@ -178,6 +204,10 @@ class WindowManager {
       alwaysOnTop: true,
       visibleOnAllWorkspaces: true,
       fullscreenable: false,
+      // Platform-specific always-on-top settings
+      ...(process.platform === 'darwin' && {
+        level: 'floating' // Start with floating level for macOS
+      })
     };
 
     // Type-specific window configurations
@@ -197,6 +227,12 @@ class WindowManager {
         hasShadow: false,
         backgroundColor: '#00000000',
         level: process.platform === 'darwin' ? 'floating' : undefined,
+        // Additional macOS flags for better always-on-top behavior
+        ...(process.platform === 'darwin' && {
+          type: 'panel',
+          acceptFirstMouse: true,
+          disableAutoHideCursor: true
+        })
       };
     } else if (type === 'main') {
       // Main window configuration - fit to content, completely frameless
@@ -219,7 +255,8 @@ class WindowManager {
           titleBarStyle: 'hiddenInset',
           trafficLightPosition: { x: -100, y: -100 },
           acceptFirstMouse: true,
-          disableAutoHideCursor: true
+          disableAutoHideCursor: true,
+          type: 'panel'
         }),
         level: process.platform === 'darwin' ? 'floating' : undefined,
       };
@@ -239,7 +276,9 @@ class WindowManager {
         thickFrame: false,
         ...(process.platform === 'darwin' && {
           titleBarStyle: 'hiddenInset',
-          trafficLightPosition: { x: -100, y: -100 }
+          trafficLightPosition: { x: -100, y: -100 },
+          type: 'panel',
+          acceptFirstMouse: true
         }),
         level: process.platform === 'darwin' ? 'floating' : undefined,
       };
@@ -261,7 +300,9 @@ class WindowManager {
         hasShadow: true,
         ...(process.platform === 'darwin' && {
           titleBarStyle: 'hiddenInset',
-          trafficLightPosition: { x: -100, y: -100 }
+          trafficLightPosition: { x: -100, y: -100 },
+          type: 'panel',
+          acceptFirstMouse: true
         }),
         level: process.platform === 'darwin' ? 'floating' : undefined,
       };
@@ -309,13 +350,11 @@ class WindowManager {
     // Apply simplified stealth measures
     this.applyStealthMeasures(window, type);
     
-    // Initialize interaction mode based on current state
-    if (type !== 'llmResponse') {
-      if (this.isInteractive) {
-        window.setIgnoreMouseEvents(false);
-      } else {
-        window.setIgnoreMouseEvents(true, { forward: true });
-      }
+    // Initialize interaction mode based on current state for ALL windows
+    if (this.isInteractive) {
+      window.setIgnoreMouseEvents(false);
+    } else {
+      window.setIgnoreMouseEvents(true, { forward: true });
     }
     
     // Show window on current desktop if requested
@@ -334,24 +373,155 @@ class WindowManager {
   }
 
   applyStealthMeasures(window, type) {
-    // Simplified always-on-top enforcement - NO LOOPS
+    // Enhanced always-on-top enforcement for all platforms
     if (process.platform === 'darwin') {
-      window.setAlwaysOnTop(true, 'floating', 1); // Changed from 'screen-saver'
+      // macOS: Use native window level constants for maximum effectiveness
+      try {
+        // Try the most aggressive levels first
+        const levels = [
+          'screen-saver',    // Highest level
+          'pop-up-menu',     // Menu level
+          'modal-panel',     // Modal panel level
+          'floating',        // Floating level
+          'normal'           // Fallback to normal with alwaysOnTop
+        ];
+        
+        let levelSet = false;
+        for (const level of levels) {
+          try {
+            window.setAlwaysOnTop(true, level, 1);
+            levelSet = true;
+            logger.debug(`Successfully set always-on-top with level: ${level}`, { type });
+            break;
+          } catch (levelError) {
+            logger.debug(`Failed to set level: ${level}`, { error: levelError.message });
+          }
+        }
+        
+        if (!levelSet) {
+          // Final fallback
+          window.setAlwaysOnTop(true);
+        }
+        
+        // Additional macOS-specific enforcement
+        setTimeout(() => {
+          if (!window.isDestroyed()) {
+            try {
+              // Force re-application of always-on-top
+              window.setAlwaysOnTop(false);
+              setTimeout(() => {
+                if (!window.isDestroyed()) {
+                  window.setAlwaysOnTop(true, 'floating', 1);
+                }
+              }, 50);
+            } catch (error) {
+              logger.warn('Error in macOS re-enforcement', { error: error.message });
+            }
+          }
+        }, 200);
+        
+      } catch (error) {
+        logger.warn('Error setting always-on-top for macOS', { error: error.message });
+        // Absolute fallback
+        window.setAlwaysOnTop(true);
+      }
     } else if (process.platform === 'win32') {
+      // Windows: Multiple enforcement attempts
       window.setAlwaysOnTop(true);
+      
+      setTimeout(() => {
+        if (!window.isDestroyed()) {
+          window.setAlwaysOnTop(true);
+        }
+      }, 100);
+      
+      setTimeout(() => {
+        if (!window.isDestroyed()) {
+          window.setAlwaysOnTop(true);
+        }
+      }, 500);
+      
+    } else {
+      // Linux and other platforms
+      window.setAlwaysOnTop(true);
+      
+      setTimeout(() => {
+        if (!window.isDestroyed()) {
+          window.setAlwaysOnTop(true);
+        }
+      }, 100);
     }
 
-    // Make window undetectable by screen capture
+    // Ensure window appears on all workspaces/desktops initially
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    
+    // Hide from taskbar to maintain stealth
+    window.setSkipTaskbar(true);
+    
+    // Make window undetectable by screen capture (if supported)
     try {
       window.setContentProtection(true);
     } catch (error) {
       logger.debug('Content protection not supported on this platform');
     }
-
-    window.setVisibleOnAllWorkspaces(true);
-    window.setSkipTaskbar(true);
     
-    // REMOVED the setTimeout loop that was causing flickering
+    // More aggressive event listeners to maintain always-on-top behavior
+    const enforceAlwaysOnTop = () => {
+      if (!window.isDestroyed()) {
+        try {
+          if (process.platform === 'darwin') {
+            // Try multiple levels on macOS
+            window.setAlwaysOnTop(true, 'floating', 1);
+            setTimeout(() => {
+              if (!window.isDestroyed()) {
+                window.setAlwaysOnTop(true, 'screen-saver', 1);
+              }
+            }, 50);
+          } else {
+            window.setAlwaysOnTop(true);
+          }
+        } catch (error) {
+          logger.debug('Error in enforceAlwaysOnTop', { error: error.message });
+        }
+      }
+    };
+    
+    // Event-based enforcement
+    window.on('blur', () => {
+      setTimeout(enforceAlwaysOnTop, 50);
+      setTimeout(enforceAlwaysOnTop, 200);
+      setTimeout(enforceAlwaysOnTop, 500);
+    });
+    
+    window.on('show', () => {
+      setTimeout(enforceAlwaysOnTop, 50);
+      setTimeout(enforceAlwaysOnTop, 200);
+    });
+    
+    window.on('focus', () => {
+      setTimeout(enforceAlwaysOnTop, 50);
+    });
+    
+    window.on('restore', () => {
+      setTimeout(enforceAlwaysOnTop, 50);
+    });
+    
+    // Periodic enforcement every 3 seconds (more frequent)
+    const periodicEnforcement = setInterval(() => {
+      if (window.isDestroyed()) {
+        clearInterval(periodicEnforcement);
+        return;
+      }
+      enforceAlwaysOnTop();
+    }, 3000);
+    
+    logger.debug('Applied enhanced stealth measures with aggressive always-on-top', {
+      type,
+      platform: process.platform,
+      alwaysOnTop: true,
+      visibleOnAllWorkspaces: true,
+      skipTaskbar: true
+    });
   }
 
   positionWindow(window, type) {
@@ -496,8 +666,30 @@ class WindowManager {
       // Set up the window to appear on all workspaces temporarily
       win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
       
-      // Disable space switching behavior
-      win.setAlwaysOnTop(true, 'floating', 1);
+      // Enforce highest level always-on-top for macOS using multiple attempts
+      const setMacOSAlwaysOnTop = () => {
+        if (!win.isDestroyed()) {
+          try {
+            // Try screen-saver level first (highest)
+            win.setAlwaysOnTop(true, 'screen-saver', 2);
+          } catch (error) {
+            try {
+              // Fallback to pop-up-menu level
+              win.setAlwaysOnTop(true, 'pop-up-menu', 2);
+            } catch (error2) {
+              try {
+                // Final fallback to floating level
+                win.setAlwaysOnTop(true, 'floating', 2);
+              } catch (error3) {
+                // Absolute fallback
+                win.setAlwaysOnTop(true);
+              }
+            }
+          }
+        }
+      };
+      
+      setMacOSAlwaysOnTop();
       
       // Small delay to ensure settings take effect
       setTimeout(() => {
@@ -508,28 +700,43 @@ class WindowManager {
           // Focus without switching spaces
           win.focus();
           
+          // Re-enforce always-on-top after showing
+          setMacOSAlwaysOnTop();
+          
+          // Additional enforcement
+          setTimeout(() => {
+            if (!win.isDestroyed()) {
+              setMacOSAlwaysOnTop();
+            }
+          }, 100);
+          
           // After window is shown, remove from all workspaces to prevent clutter
           setTimeout(() => {
             if (!win.isDestroyed()) {
               win.setVisibleOnAllWorkspaces(false);
+              // Final always-on-top enforcement
+              setMacOSAlwaysOnTop();
             }
           }, 300);
         }
       }, 50);
     } else {
-      // For non-macOS platforms, simpler approach
+      // For non-macOS platforms, simpler approach with enhanced always-on-top
       win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      win.setAlwaysOnTop(true);
       win.show();
       win.focus();
       
       setTimeout(() => {
         if (!win.isDestroyed()) {
           win.setVisibleOnAllWorkspaces(false);
+          // Ensure always-on-top is maintained
+          win.setAlwaysOnTop(true);
         }
       }, 500);
     }
     
-    logger.debug('Showing window on current desktop', {
+    logger.debug('Showing window on current desktop with enhanced always-on-top', {
       platform: process.platform,
       windowId: win.id,
       isDestroyed: win.isDestroyed()
@@ -720,12 +927,12 @@ class WindowManager {
     this.isInteractive = interactive;
     
     this.windows.forEach((window, type) => {
-      if (type !== 'llmResponse' && !window.isDestroyed()) {
+      if (!window.isDestroyed()) {
         if (interactive) {
-          // Interactive mode: allow mouse events
+          // Interactive mode: allow mouse events for all windows
           window.setIgnoreMouseEvents(false);
         } else {
-          // Non-interactive mode: enable click-through with forwarding
+          // Non-interactive mode: enable click-through with forwarding for all windows
           window.setIgnoreMouseEvents(true, { forward: true });
         }
         window.webContents.send('interaction-mode-changed', interactive);
@@ -735,13 +942,140 @@ class WindowManager {
     logger.info('Window interaction mode changed', { 
       interactive,
       clickThrough: !interactive,
-      affectedWindows: Array.from(this.windows.keys()).filter(type => type !== 'llmResponse')
+      affectedWindows: Array.from(this.windows.keys())
     });
   }
 
   toggleInteraction() {
     this.setInteractive(!this.isInteractive);
+    
+    // Ensure all windows remain always-on-top after interaction mode change
+    this.enforceAlwaysOnTopForAllWindows();
+    
     return this.isInteractive;
+  }
+
+  // New method to enforce always-on-top for all windows
+  enforceAlwaysOnTopForAllWindows() {
+    this.windows.forEach((window, type) => {
+      if (!window.isDestroyed()) {
+        try {
+          if (process.platform === 'darwin') {
+            // Try multiple levels for macOS
+            window.setAlwaysOnTop(true, 'pop-up-menu', 1);
+            
+            setTimeout(() => {
+              if (!window.isDestroyed()) {
+                window.setAlwaysOnTop(true, 'floating', 1);
+              }
+            }, 100);
+            
+            setTimeout(() => {
+              if (!window.isDestroyed()) {
+                window.setAlwaysOnTop(true, 'screen-saver', 1);
+              }
+            }, 200);
+          } else {
+            // Windows and Linux
+            window.setAlwaysOnTop(true);
+            
+            // Additional enforcement after a short delay
+            setTimeout(() => {
+              if (!window.isDestroyed()) {
+                window.setAlwaysOnTop(true);
+              }
+            }, 100);
+          }
+        } catch (error) {
+          logger.warn('Error enforcing always-on-top', { 
+            type, 
+            error: error.message 
+          });
+          // Fallback to basic always-on-top
+          try {
+            window.setAlwaysOnTop(true);
+          } catch (fallbackError) {
+            logger.error('Fallback always-on-top failed', { 
+              type, 
+              error: fallbackError.message 
+            });
+          }
+        }
+      }
+    });
+    
+    logger.debug('Enforced always-on-top for all windows with aggressive strategy', {
+      platform: process.platform,
+      windowCount: this.windows.size
+    });
+  }
+
+  // Public method to manually enforce always-on-top for all windows
+  forceAlwaysOnTopForAllWindows() {
+    this.enforceAlwaysOnTopForAllWindows();
+    logger.info('Manually enforced always-on-top for all windows');
+  }
+
+  // Debug method to test and verify always-on-top functionality
+  testAlwaysOnTopForAllWindows() {
+    const results = {};
+    
+    this.windows.forEach((window, type) => {
+      if (!window.isDestroyed()) {
+        try {
+          const isAlwaysOnTop = window.isAlwaysOnTop();
+          
+          if (process.platform === 'darwin') {
+            // Test different levels on macOS
+            window.setAlwaysOnTop(true, 'screen-saver', 2);
+            setTimeout(() => {
+              if (!window.isDestroyed()) {
+                window.setAlwaysOnTop(true, 'pop-up-menu', 2);
+                setTimeout(() => {
+                  if (!window.isDestroyed()) {
+                    window.setAlwaysOnTop(true, 'floating', 2);
+                  }
+                }, 50);
+              }
+            }, 50);
+          } else {
+            // For other platforms
+            window.setAlwaysOnTop(true);
+            setTimeout(() => {
+              if (!window.isDestroyed()) {
+                window.setAlwaysOnTop(true);
+              }
+            }, 50);
+          }
+          
+          results[type] = {
+            success: true,
+            isAlwaysOnTop: isAlwaysOnTop,
+            isVisible: window.isVisible(),
+            isDestroyed: window.isDestroyed()
+          };
+          
+        } catch (error) {
+          results[type] = {
+            success: false,
+            error: error.message,
+            isDestroyed: window.isDestroyed()
+          };
+        }
+      } else {
+        results[type] = {
+          success: false,
+          error: 'Window is destroyed'
+        };
+      }
+    });
+    
+    logger.info('Always-on-top test results', { 
+      platform: process.platform,
+      results 
+    });
+    
+    return results;
   }
 
   showLLMResponse(content, metadata = {}) {
@@ -1112,6 +1446,13 @@ class WindowManager {
         
         window.setPosition(Math.round(newX), Math.round(newY));
         
+        // Ensure always-on-top is maintained after moving
+        if (process.platform === 'darwin') {
+          window.setAlwaysOnTop(true, 'screen-saver', 1);
+        } else {
+          window.setAlwaysOnTop(true);
+        }
+        
         // Ensure window appears on current desktop if it's visible
         if (window.isVisible()) {
           this.showOnCurrentDesktop(window);
@@ -1261,7 +1602,7 @@ class WindowManager {
       skill,
       windowCount: this.windows.size 
     });
-  }
+    }
 }
 
 module.exports = new WindowManager();
