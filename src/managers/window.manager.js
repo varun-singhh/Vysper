@@ -131,10 +131,11 @@ class WindowManager {
     }
     const window = await this.createWindow('chat');
     this.windows.set('chat', window);
+    window.webContents.openDevTools({ mode: 'detach' });
     window.hide();
     return window;
   }
-  
+
   async createLLMResponseWindow() {
     if (this.windows.has('llmResponse')) {
       return this.windows.get('llmResponse');
@@ -641,6 +642,11 @@ class WindowManager {
   }
 
   switchToWindow(windowType) {
+    if (this.windows.has('chat') && this.windows.get('chat').isVisible()) {
+      this.hideChatWindow();
+      return;
+    }
+
     if (!this.windowConfigs[windowType]) {
       logger.warn('Attempted to switch to unknown window type', { windowType });
       return;
