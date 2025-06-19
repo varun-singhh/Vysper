@@ -831,7 +831,12 @@
             addMessage(text, 'user');
             messageInput.value = '';
             
-            // Send to main process for session memory storage
+            // Show thinking indicator after user message
+            setTimeout(() => {
+              showThinkingIndicator();
+            }, 300);
+            
+            // Send to main process for session memory storage and LLM processing
             try {
               if (whysperAPI && whysperAPI.sendChatMessage) {
                 await whysperAPI.sendChatMessage(text);
@@ -851,7 +856,12 @@
               addMessage(text, 'user');
               messageInput.value = '';
               
-              // Send to main process for session memory storage
+              // Show thinking indicator after user message
+              setTimeout(() => {
+                showThinkingIndicator();
+              }, 300);
+              
+              // Send to main process for session memory storage and LLM processing
               try {
                 if (whysperAPI && whysperAPI.sendChatMessage) {
                   await whysperAPI.sendChatMessage(text);

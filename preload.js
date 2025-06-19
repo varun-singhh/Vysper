@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearSessionMemory: () => ipcRenderer.invoke('clear-session-memory'),
   formatSessionHistory: () => ipcRenderer.invoke('format-session-history'),
   sendChatMessage: (text) => ipcRenderer.invoke('send-chat-message', text),
+  getSkillPrompt: (skillName) => ipcRenderer.invoke('get-skill-prompt', skillName),
   
   // Gemini LLM configuration
   setGeminiApiKey: (apiKey) => ipcRenderer.invoke('set-gemini-api-key', apiKey),

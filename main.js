@@ -307,11 +307,36 @@ class ApplicationController {
       return { success: true };
     });
 
-    ipcMain.handle("send-chat-message", (event, text) => {
+    ipcMain.handle("send-chat-message", async (event, text) => {
       // Add chat message to session memory
       sessionManager.addUserInput(text, 'chat');
       logger.debug('Chat message added to session memory', { textLength: text.length });
+      
+      // Process typed message with LLM in the same way as transcribed text
+      setTimeout(async () => {
+        try {
+          const sessionHistory = sessionManager.getOptimizedHistory();
+          await this.processTranscriptionWithLLM(text, sessionHistory);
+        } catch (error) {
+          logger.error("Failed to process chat message with LLM", {
+            error: error.message,
+            text: text.substring(0, 100)
+          });
+        }
+      }, 500);
+      
       return { success: true };
+    });
+
+    ipcMain.handle("get-skill-prompt", (event, skillName) => {
+      try {
+        const { promptLoader } = require('./prompt-loader');
+        const skillPrompt = promptLoader.getSkillPrompt(skillName);
+        return skillPrompt;
+      } catch (error) {
+        logger.error('Failed to get skill prompt', { skillName, error: error.message });
+        return null;
+      }
     });
 
     ipcMain.handle("set-gemini-api-key", (event, apiKey) => {

@@ -5,9 +5,7 @@ try {
     let logger;
     try {
         logger = require('../core/logger').createServiceLogger('CHAT-UI');
-        console.log('✅ CHAT-WINDOW: Logger initialized via require');
     } catch (error) {
-        console.log('⚠️ CHAT-WINDOW: Could not require logger, using console fallback');
         logger = {
             info: (...args) => console.log('[CHAT-UI INFO]', ...args),
             debug: (...args) => console.log('[CHAT-UI DEBUG]', ...args),
@@ -273,21 +271,41 @@ class ChatWindowUI {
         }
     }
 
-    handleSkillActivated(skillName) {
-        const skillPrompts = {
-            'dsa': '🧠 DSA Mode: Ready to practice data structures and algorithms!',
-            'behavioral': '💼 Behavioral Mode: Ready to practice behavioral interview questions!',
-            'sales': '💰 Sales Mode: Ready to practice sales techniques!',
-            'presentation': '🎤 Presentation Mode: Ready to practice public speaking!',
-            'data-science': '📊 Data Science Mode: Ready to discuss ML and analytics!',
-            'programming': '💻 Programming Mode: Ready to discuss coding best practices!',
-            'devops': '🚀 DevOps Mode: Ready to discuss CI/CD and infrastructure!',
-            'system-design': '🏗️ System Design Mode: Ready to architect large-scale systems!',
-            'negotiation': '🤝 Negotiation Mode: Ready to practice negotiation strategies!'
-        };
-        
-        const prompt = skillPrompts[skillName] || `🎯 ${skillName} Mode: Ready to help!`;
-        this.addMessage(prompt, 'system');
+    async handleSkillActivated(skillName) {
+        try {
+            // Request the actual skill prompt from the main process
+            const skillPrompt = await window.electronAPI.getSkillPrompt(skillName);
+            
+            if (skillPrompt) {
+                // Extract the title/first line for display
+                const lines = skillPrompt.split('\n').filter(line => line.trim());
+                const title = lines.find(line => line.startsWith('#')) || `# ${skillName.toUpperCase()} Mode`;
+                const cleanTitle = title.replace(/^#+\s*/, '').trim();
+                
+                // Show a brief activation message with the skill title
+                const icons = {
+                    'dsa': '🧠',
+                    'behavioral': '💼', 
+                    'sales': '💰',
+                    'presentation': '🎤',
+                    'data-science': '📊',
+                    'programming': '💻',
+                    'devops': '🚀',
+                    'system-design': '🏗️',
+                    'negotiation': '🤝'
+                };
+                
+                const icon = icons[skillName] || '🎯';
+                this.addMessage(`${icon} ${cleanTitle} - Ready to help!`, 'system');
+            } else {
+                // Fallback if prompt not found
+                this.addMessage(`🎯 ${skillName.toUpperCase()} Mode: Ready to help!`, 'system');
+            }
+        } catch (error) {
+            logger.error('Failed to load skill prompt', { skill: skillName, error: error.message });
+            // Fallback message
+            this.addMessage(`🎯 ${skillName.toUpperCase()} Mode: Ready to help!`, 'system');
+        }
         
         logger.info('Skill activated in chat', { skill: skillName });
     }
