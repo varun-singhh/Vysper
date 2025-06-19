@@ -131,7 +131,6 @@ class WindowManager {
     }
     const window = await this.createWindow('chat');
     this.windows.set('chat', window);
-    window.webContents.openDevTools({ mode: 'detach' });
     window.hide();
     return window;
   }

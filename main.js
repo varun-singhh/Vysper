@@ -328,6 +328,26 @@ class ApplicationController {
       return await llmService.testConnection();
     });
 
+    ipcMain.handle("run-gemini-diagnostics", async () => {
+      try {
+        const connectivity = await llmService.checkNetworkConnectivity();
+        const apiTest = await llmService.testConnection();
+        
+        return {
+          success: true,
+          connectivity,
+          apiTest,
+          timestamp: new Date().toISOString()
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: error.message,
+          timestamp: new Date().toISOString()
+        };
+      }
+    });
+
     // Settings handlers
     ipcMain.handle("show-settings", () => {
       windowManager.showSettings();
