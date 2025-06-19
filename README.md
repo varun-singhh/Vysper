@@ -4,7 +4,7 @@
 
 An AI-powered desktop tool that helps you excel in technical and professional interviews by providing intelligent, real-time assistance while remaining completely invisible to screen sharing and recording software.
 
-## 🎯 Perfect for Interviews
+## Perfect for Interviews
 
 **Completely Stealth** - Invisible to Zoom, Teams, Meet, and all screen sharing tools
 **Real-time AI Assistance** - Instant help with coding problems, system design, and interview questions
@@ -27,6 +27,8 @@ An AI-powered desktop tool that helps you excel in technical and professional in
 ```bash
 git clone <repository-url>
 cd Vysper
+brew install tesseract
+brew install sox
 npm install
 npm start
 ```
@@ -192,7 +194,7 @@ GEMINI_API_KEY=your_gemini_api_key
 2. **Industry Examples**: Request relevant scenarios for your field
 3. **Follow-up Prep**: Prepare for common follow-up questions
 
-## 🛠 Important Technical Requirements (MUST INSTALL Before Running)
+## Important Technical Requirements (MUST INSTALL Before Running)
 - **Node.js** 16+
 - **Tesseract OCR** (`brew install tesseract`)
 - **Audio Tool** (`brew install sox`)
@@ -228,12 +230,12 @@ We're looking for contributors to help expand this open-source project:
 - **UI/UX Improvements** - Enhanced interface and user experience
 
 ### How to Contribute
-1. 🍴 **Fork the repository**
-2. 🌟 **Star the project** if you find it useful
-3. 🐛 **Report issues** for bugs or feature requests
-4. 💡 **Submit pull requests** for improvements
-5. 📚 **Improve documentation** and add examples
-6. 🎯 **Share your interview success stories**
+1. **Fork the repository**
+2. **Star the project** if you find it useful
+3. **Report issues** for bugs or feature requests
+4. **Submit pull requests** for improvements
+5. **Improve documentation** and add examples
+6. **Share your interview success stories**
 
 ### Getting Started
 ```bash
@@ -243,15 +245,4 @@ npm install
 npm run dev
 ```
 
-### Community
-- 💬 **GitHub Discussions** - Feature requests and general chat
-- 🐛 **GitHub Issues** - Bug reports and technical issues
-- 📧 **Email** - Security vulnerabilities (private disclosure)
-
-**Join us in democratizing interview preparation!** 
-
-Every contribution helps job seekers worldwide perform better in interviews and land their dream jobs.
-
----
-
-⭐ **Star this repo** if Vysper helped you ace your interviews!
+⭐ **Star this repo** if Vysper helped you ace your interviews or you vibed with it!
