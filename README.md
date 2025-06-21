@@ -11,6 +11,9 @@
 
 An AI-powered desktop tool that helps you excel in technical and professional interviews by providing intelligent, real-time assistance while remaining completely invisible to screen sharing and recording software.
 
+### Demo
+https://github.com/user-attachments/assets/c5616482-3652-4686-b87b-e04d06572d2f
+
 ## Perfect for Interviews
 
 **Completely Stealth** - Invisible to Zoom, Teams, Meet, and all screen sharing tools
@@ -211,11 +214,5 @@ The app remembers your interview context across multiple questions:
 4. **Submit pull requests** for improvements
 5. **Improve documentation** and add examples
 6. **Share your success stories**
-
-
-### Demo
-https://github.com/user-attachments/assets/c5616482-3652-4686-b87b-e04d06572d2f
-
-
 
 ⭐ **Star this repo** if Vysper helped you ace your interviews or you vibed with it!
