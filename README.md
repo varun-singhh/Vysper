@@ -15,7 +15,6 @@ An AI-powered desktop tool that helps you excel in technical and professional in
 https://github.com/user-attachments/assets/c5616482-3652-4686-b87b-e04d06572d2f
 
 ## Perfect for Interviews
-
 **Completely Stealth** - Invisible to Zoom, Teams, Meet, and all screen sharing tools
 **Real-time AI Assistance** - Instant help with coding problems, system design, and interview questions
 **Professional Skills** - Specialized modes for different interview types
